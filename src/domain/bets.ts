@@ -1,4 +1,4 @@
-import { Game, Team, Hole, Score, Purchase } from '../../types/game';
+import { Team, Hole, Score, Purchase } from '../types/game';
 
 export function getHandicapStrokes(teamHandicap: number, strokeIndex: number): number {
   const fullStrokes = Math.floor(teamHandicap / 18);
@@ -20,12 +20,18 @@ export function calculateHolePot(baseValue: number, carryIn: number, purchases: 
   return pot;
 }
 
-export function getProvisionalHoleResult(hole: Hole, teams: Team[], scores: Score[]): { winnerTeamId?: string; isTie: boolean; netScores: { teamId: string; net: number }[] } {
-  const netScores = scores.map(s => ({ teamId: s.teamId, net: s.net }));
-  const minNet = Math.min(...netScores.map(ns => ns.net));
-  const winners = netScores.filter(ns => ns.net === minNet);
+export function getProvisionalHoleResult(
+  _hole: Hole,
+  _teams: Team[],
+  scores: Score[],
+): { winnerTeamId?: string; isTie: boolean; netScores: { teamId: string; net: number }[] } {
+  const netScores = scores.map((score) => ({ teamId: score.teamId, net: score.net }));
+  const minNet = Math.min(...netScores.map((netScore) => netScore.net));
+  const winners = netScores.filter((netScore) => netScore.net === minNet);
+
   if (winners.length === 1) {
     return { winnerTeamId: winners[0].teamId, isTie: false, netScores };
   }
+
   return { isTie: true, netScores };
 }
