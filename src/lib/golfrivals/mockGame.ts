@@ -1,4 +1,4 @@
-import { Game, Team, Hole, Purchase, Score } from '../../types/game';
+import { Game, Team, Hole } from '../../types/game';
 import { VILLAMARTIN_COURSE } from './course';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -17,6 +17,7 @@ export function createMockGame(): Game {
     reverseMulligansUsed: 0,
     moneySpent: 0,
     moneyWon: 0,
+    code: `${100000 + i}`,
   }));
 
   const holes: Hole[] = VILLAMARTIN_COURSE.map((h) => ({
@@ -42,6 +43,7 @@ export function createMockGame(): Game {
     teams,
     holes,
     purchases: [],
+    extraBets: [],
     currentHole: 1,
     status: 'in-progress',
   };
