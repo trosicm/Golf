@@ -67,23 +67,23 @@ export function buyMulligan(game: Game, holeNumber: number, teamId: string): Gam
     timestamp: Date.now(),
   };
 
-  return {
-    ...game,
-    teams: game.teams.map((t) =>
-      t.id === teamId
-        ? { ...t, mulligansAvailable: t.mulligansAvailable - 1, mulligansUsed: t.mulligansUsed + 1 }
-        : t,
-    ),
-    holes: game.holes.map((h, i) =>
-      i === holeIdx
-        ? {
-            ...h,
-            scores: h.scores.map((s) => (s.teamId === teamId ? { ...s, mulliganUsed: true } : s)),
-          }
-        : h,
-    ),
-    purchases: [...game.purchases, newPurchase],
-  };
+    return {
+      ...game,
+      teams: game.teams.map((t) =>
+        t.id === teamId
+          ? { ...t, mulligansAvailable: t.mulligansAvailable - 1, mulligansUsed: t.mulligansUsed + 1 }
+          : t,
+      ),
+      holes: game.holes.map((h, i) =>
+        i === holeIdx
+          ? {
+              ...h,
+              scores: h.scores.map((s) => (s.teamId === teamId ? { ...s, mulliganUsed: true } : s)),
+            }
+          : h,
+      ),
+      purchases: [...game.purchases, newPurchase],
+    };
 }
 
 export function buyReverseMulligan(
