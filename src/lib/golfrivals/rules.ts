@@ -2,62 +2,8 @@
 export function getBaseContributionPerTeam(holeBaseValue: number, teamCount: number): number {
   return holeBaseValue / teamCount;
 }
-import { Game, Team, Hole, Score, Purchase } from '../../types/game';
-
-// Returns the number of handicap strokes a team receives on a given hole (by SI)
-export function getHandicapStrokes(teamHandicap: number, strokeIndex: number): number {
-  // SI is 1 (hardest) to 18 (easiest)
-  // For HCP 8: 1 stroke on SI 1-8, 0 on 9-18
-  // For HCP 18: 1 stroke on all
-  // For HCP 22: 2 strokes on SI 1-4, 1 on 5-18
-  const fullStrokes = Math.floor(teamHandicap / 18);
-  const extraStrokes = teamHandicap % 18;
-  let strokes = fullStrokes;
-  if (strokeIndex <= extraStrokes) strokes += 1;
-  return strokes;
-}
-
-export function calculateNetScore(grossScore: number, handicapStrokes: number): number {
-  return grossScore - handicapStrokes;
-}
-
-export function calculateHolePot(baseValue: number, carryIn: number, purchases: Purchase[]): number {
-  let pot = baseValue + carryIn;
-  for (const p of purchases) {
-    pot += p.cost;
-  }
-  return pot;
-}
-
-export function getProvisionalHoleResult(hole: Hole, teams: Team[], scores: Score[]): { winnerTeamId?: string; isTie: boolean; netScores: { teamId: string; net: number }[] } {
-  const netScores = scores.map(s => ({ teamId: s.teamId, net: s.net }));
-  const minNet = Math.min(...netScores.map(ns => ns.net));
-  const winners = netScores.filter(ns => ns.net === minNet);
-  if (winners.length === 1) {
-    return { winnerTeamId: winners[0].teamId, isTie: false, netScores };
-  }
-  return { isTie: true, netScores };
-}
-
-export function buyMulligan(game: Game, holeNumber: number, teamId: string): Game {
-  const holeIdx = game.holes.findIndex(h => h.number === holeNumber);
-  if (holeIdx === -1) return game;
-  const hole = game.holes[holeIdx];
-  if (hole.isClosed) return game;
-  const team = game.teams.find(t => t.id === teamId);
-  if (!team || team.mulligansAvailable < 1) return game;
-  const score = hole.scores.find(s => s.teamId === teamId);
-  if (!score || score.mulliganUsed) return game;
-  // Only 1 mulligan per team per hole
-  // Add purchase
-  const newPurchase: Purchase = {
-    teamId,
-    type: 'mulligan',
-    holeNumber,
-    cost: 50,
-    timestamp: Date.now(),
-  };
-  // Update state
+// Reexporta la lógica de apuestas desde domain/bets.ts
+export * from '../../domain/bets';
   return {
     ...game,
     teams: game.teams.map(t => t.id === teamId ? { ...t, mulligansAvailable: t.mulligansAvailable - 1, mulligansUsed: t.mulligansUsed + 1 } : t),
