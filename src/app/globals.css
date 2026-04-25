@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+/* --- PREMIUM BRAND PALETTE --- */
+:root {
+  --background: linear-gradient(135deg, #181c1f 0%, #23243a 100%);
+  --foreground: #fff;
+  --brand-font: 'Geist', 'Inter', Arial, Helvetica, sans-serif;
+  --card-bg: rgba(28,30,40,0.98);
+  --card-border: #353a4a;
+  --shadow: 0 4px 32px 0 rgba(0,0,0,0.28);
+  --danger: #ff3860;
+  --success: #2de282;
+  /* Team colors */
+  --team-1: #1db954;
+  --team-2: #3b82f6;
+  --team-3: #ffd700;
+  --team-4: #a259ff;
+  --accent-gold: #ffd700;
+  --accent-blue: #3b82f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: linear-gradient(135deg, #101214 0%, #23243a 100%);
+    --foreground: #fff;
+    --card-bg: rgba(18,20,30,0.98);
+    --card-border: #23272b;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--brand-font);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.01em;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1.5px solid var(--card-border);
+  border-radius: 1.25rem;
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+  backdrop-filter: blur(2px);
+}
+
+.btn {
+  display: inline-block;
+  border-radius: 9999px;
+  font-weight: 700;
+  padding: 0.6rem 1.7rem;
+  font-size: 1.08rem;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+  cursor: pointer;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+}
+.btn-team-1 { background: var(--team-1); color: #fff; }
+.btn-team-2 { background: var(--team-2); color: #fff; }
+.btn-team-3 { background: var(--team-3); color: #181c1f; }
+.btn-team-4 { background: var(--team-4); color: #fff; }
+.btn-gold { background: var(--accent-gold); color: #181c1f; }
+.btn-blue { background: var(--accent-blue); color: #fff; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.team-badge { display: inline-block; font-weight: 700; border-radius: 0.7em; padding: 0.2em 0.9em; font-size: 1.1em; letter-spacing: 0.02em; }
+.team-1 { background: linear-gradient(90deg, #1db954 60%, #1a8f4c 100%); color: #fff; }
+.team-2 { background: linear-gradient(90deg, #3b82f6 60%, #1e3a8a 100%); color: #fff; }
+.team-3 { background: linear-gradient(90deg, #ffd700 60%, #bfa100 100%); color: #181c1f; }
+.team-4 { background: linear-gradient(90deg, #a259ff 60%, #5f2b96 100%); color: #fff; }
+.scoreboard-table th, .scoreboard-table td {
+  padding: 0.7rem 0.35rem;
+  font-size: 1.05em;
+}
+/* --- BRAND MANUAL BASE --- */
+.brand-logo {
+  display: block;
+  width: 180px;
+  margin: 0 auto 2rem auto;
+  filter: drop-shadow(0 2px 12px #0008);
+}
+.brand-manual {
+  background: rgba(24,28,31,0.98);
+  border-radius: 1.5rem;
+  padding: 2.5rem 2rem;
+  color: #fff;
+  max-width: 600px;
+  margin: 2rem auto;
+  box-shadow: 0 4px 32px 0 rgba(0,0,0,0.28);
+  font-family: var(--brand-font);
+}
