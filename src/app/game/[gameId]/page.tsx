@@ -115,7 +115,9 @@ export default function GameLive() {
   const gameId = Array.isArray(params?.gameId) ? params.gameId[0] : params?.gameId;
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
   const [invite, setInvite] = useState<any>(null);
   const [game, setGame] = useState<any>(null);
   const [holes, setHoles] = useState<any[]>([]);
@@ -345,6 +347,7 @@ export default function GameLive() {
   useEffect(() => {
     setGrossScores({});
     setProvisionalResult(null);
+    setSaveMessage("");
   }, [liveData.currentHoleNumber]);
 
   const calculateWinner = () => {
@@ -376,6 +379,91 @@ export default function GameLive() {
     }
 
     setProvisionalResult({ type: "tie", tiedTeams, results });
+  };
+
+  const insertHoleResultsWithFallback = async (rows: any[]) => {
+    const variants = [
+      rows,
+      rows.map(({ result_type, is_tied, pot_value, ...row }) => row),
+      rows.map(({ hole_id, result_type, is_tied, pot_value, strokes_received, ...row }) => row),
+    ];
+
+    let lastError: any = null;
+
+    for (const variant of variants) {
+      const { error: insertError } = await supabase.from("hole_results").insert(variant);
+
+      if (!insertError) return;
+      lastError = insertError;
+    }
+
+    throw lastError;
+  };
+
+  const confirmHole = async (mode: "winner" | "carry") => {
+    if (!gameId || !provisionalResult || provisionalResult.type === "error") return;
+
+    if (mode === "winner" && provisionalResult.type !== "winner") return;
+    if (mode === "carry" && provisionalResult.type !== "tie") return;
+
+    setSaving(true);
+    setSaveMessage("");
+
+    try {
+      const winnerTeamId = provisionalResult.type === "winner" ? provisionalResult.winner.teamId : null;
+      const nextHole = Math.min(18, liveData.currentHoleNumber + 1);
+      const isFinalHole = liveData.currentHoleNumber >= 18;
+
+      await supabase
+        .from("hole_results")
+        .delete()
+        .eq("game_id", gameId)
+        .eq("hole_number", liveData.currentHoleNumber);
+
+      const rows = provisionalResult.results.map((result) => ({
+        game_id: gameId,
+        hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id,
+        hole_number: liveData.currentHoleNumber,
+        team_id: result.teamId,
+        gross_score: result.grossScore,
+        strokes_received: result.strokesReceived,
+        net_score: result.netScore,
+        is_winner: winnerTeamId === result.teamId,
+        is_tied: provisionalResult.type === "tie",
+        result_type: provisionalResult.type === "winner" ? "winner" : "carry",
+        pot_value: liveData.currentPot,
+      }));
+
+      await insertHoleResultsWithFallback(rows);
+
+      if (mode === "carry" && !isFinalHole) {
+        await supabase
+          .from("holes")
+          .update({ carry_in: liveData.currentPot })
+          .eq("game_id", gameId)
+          .eq("hole_number", nextHole);
+      }
+
+      const { error: gameUpdateError } = await supabase
+        .from("games")
+        .update({ current_hole: nextHole, status: isFinalHole ? "completed" : game?.status ?? "draft" })
+        .eq("id", gameId);
+
+      if (gameUpdateError) throw gameUpdateError;
+
+      setHoleResults((current) => [
+        ...current.filter((result) => (result.hole_number ?? result.holeNumber ?? result.number) !== liveData.currentHoleNumber),
+        ...rows,
+      ]);
+      setGame((current: any) => ({ ...current, current_hole: nextHole, status: isFinalHole ? "completed" : current?.status ?? "draft" }));
+      setSaveMessage(mode === "winner" ? "Winner confirmed. Moving to next hole." : "Carry confirmed. Pot moves to next hole.");
+      setGrossScores({});
+      setProvisionalResult(null);
+    } catch (confirmError: any) {
+      setSaveMessage(`Could not confirm hole: ${confirmError?.message || "Unknown Supabase error"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) return <div className="p-4">Loading live match...</div>;
@@ -462,6 +550,7 @@ export default function GameLive() {
                   onChange={(event) => {
                     setGrossScores((current) => ({ ...current, [team.id]: event.target.value }));
                     setProvisionalResult(null);
+                    setSaveMessage("");
                   }}
                   className="mt-1 w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-2 py-2 text-center text-xl font-black text-[var(--gr-sand)] outline-none"
                   placeholder="-"
@@ -508,6 +597,12 @@ export default function GameLive() {
           </div>
         </div>
 
+        {saveMessage && (
+          <div className={`mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm font-bold ${saveMessage.startsWith("Could not") ? "text-danger" : "text-success"}`}>
+            {saveMessage}
+          </div>
+        )}
+
         {provisionalResult && (
           <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">
             {provisionalResult.type === "error" && (
@@ -529,7 +624,7 @@ export default function GameLive() {
                   {provisionalResult.tiedTeams.map((team) => team.name).join(" vs ")}
                 </div>
                 <div className="text-[var(--gr-text-muted)]">
-                  Same best net: {provisionalResult.tiedTeams[0]?.netScore}. Use Push / Carry in the next step.
+                  Same best net: {provisionalResult.tiedTeams[0]?.netScore}. Push / Carry moves this pot to the next hole.
                 </div>
               </div>
             )}
@@ -537,9 +632,9 @@ export default function GameLive() {
         )}
 
         <div className="grid grid-cols-2 gap-2">
-          <button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner}>Calculate Winner</button>
-          <button className="btn btn-secondary" type="button" disabled={!provisionalResult || provisionalResult.type !== "winner"}>Confirm Winner</button>
-          <button className="btn btn-secondary" type="button" disabled={!provisionalResult || provisionalResult.type !== "tie"}>Push / Carry</button>
+          <button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving}>Calculate Winner</button>
+          <button className="btn btn-secondary" type="button" disabled={saving || !provisionalResult || provisionalResult.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button>
+          <button className="btn btn-secondary" type="button" disabled={saving || !provisionalResult || provisionalResult.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button>
         </div>
       </section>
 
