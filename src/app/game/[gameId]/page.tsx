@@ -68,7 +68,13 @@ function getPlayerIds(gameTeam: any) {
     gameTeam.player2_id,
     gameTeam.player_a_id,
     gameTeam.player_b_id,
+    gameTeam.player_id,
+    gameTeam.playerId,
   ].filter(Boolean);
+}
+
+function getPlayerDisplayName(player: any) {
+  return player?.name ?? player?.display_name ?? player?.full_name ?? player?.nickname ?? player?.email ?? player?.id;
 }
 
 function mergeHolesWithDefaults(holes: any[]) {
@@ -91,6 +97,7 @@ export default function GameLive() {
   const [gameTeams, setGameTeams] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
+  const [gameInvites, setGameInvites] = useState<any[]>([]);
   const [holeResults, setHoleResults] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -130,12 +137,13 @@ export default function GameLive() {
         return;
       }
 
-      const [gameRes, holesRes, gameTeamsRes, teamsRes, playersRes, holeResultsRes, walletsRes, purchasesRes] = await Promise.all([
+      const [gameRes, holesRes, gameTeamsRes, teamsRes, playersRes, allInvitesRes, holeResultsRes, walletsRes, purchasesRes] = await Promise.all([
         supabase.from("games").select("*").eq("id", gameId).maybeSingle(),
         supabase.from("holes").select("*").eq("game_id", gameId),
         supabase.from("game_teams").select("*").eq("game_id", gameId),
         supabase.from("teams").select("*"),
         supabase.from("players").select("*"),
+        supabase.from("game_invites").select("*").eq("game_id", gameId),
         supabase.from("hole_results").select("*").eq("game_id", gameId),
         supabase.from("game_player_wallets").select("*").eq("game_id", gameId),
         supabase.from("purchases").select("*").eq("game_id", gameId),
@@ -146,6 +154,7 @@ export default function GameLive() {
         { name: "game_teams", data: gameTeamsRes.data || [], error: gameTeamsRes.error },
         { name: "teams", data: teamsRes.data || [], error: teamsRes.error },
         { name: "players", data: playersRes.data || [], error: playersRes.error },
+        { name: "game_invites", data: allInvitesRes.data || [], error: allInvitesRes.error },
         { name: "hole_results", data: holeResultsRes.data || [], error: holeResultsRes.error },
         { name: "game_player_wallets", data: walletsRes.data || [], error: walletsRes.error },
         { name: "purchases", data: purchasesRes.data || [], error: purchasesRes.error },
@@ -169,6 +178,7 @@ export default function GameLive() {
       setGameTeams(gameTeamsRes.data || []);
       setTeams(teamsRes.data || []);
       setPlayers(playersRes.data || []);
+      setGameInvites(allInvitesRes.data || []);
       setHoleResults(holeResultsRes.data || []);
       setWallets(walletsRes.data || []);
       setPurchases(purchasesRes.data || []);
@@ -227,11 +237,23 @@ export default function GameLive() {
     }
 
     const getTeamName = (teamId: string) => teams.find((team) => team.id === teamId)?.name || teamId;
-    const getPlayerName = (playerId: string) => players.find((player) => player.id === playerId)?.name || playerId;
+    const getPlayerName = (playerId: string) => getPlayerDisplayName(players.find((player) => player.id === playerId)) || playerId;
 
     return gameTeams.map((gameTeam, index) => {
       const teamId = getTeamId(gameTeam);
-      const playerIds = getPlayerIds(gameTeam);
+      const directPlayerIds = getPlayerIds(gameTeam);
+      const playersByTeam = players
+        .filter((player) => (player.team_id ?? player.teamId ?? player.current_team_id ?? player.currentTeamId) === teamId)
+        .map((player) => player.id);
+      const invitedPlayerIds = gameInvites
+        .filter((gameInvite) => {
+          const inviteTeamId = gameInvite.team_id ?? gameInvite.teamId;
+          return inviteTeamId === teamId;
+        })
+        .map((gameInvite) => gameInvite.player_id ?? gameInvite.playerId)
+        .filter(Boolean);
+      const fallbackInvitePlayerId = gameInvites[index]?.player_id ?? gameInvites[index]?.playerId;
+      const playerIds = Array.from(new Set([...directPlayerIds, ...playersByTeam, ...invitedPlayerIds, fallbackInvitePlayerId].filter(Boolean)));
       const teamResults = holeResults.filter((result) => (result.team_id ?? result.teamId) === teamId);
       const currentResult = teamResults.find((result) => {
         const resultHoleNumber = result.hole_number ?? result.holeNumber ?? result.number;
@@ -256,12 +278,13 @@ export default function GameLive() {
           return Number.isFinite(value) ? sum + value : sum;
         }, 0);
       const balance = walletBalance || won - spent;
+      const playerNames = playerIds.map((playerId) => getPlayerName(playerId)).filter(Boolean);
 
       return {
         id: teamId,
         position: index + 1,
         name: getTeamName(teamId),
-        players: playerIds.map((playerId) => getPlayerName(playerId)).join(" & ") || "Players pending",
+        players: playerNames.length > 0 ? playerNames.join(" & ") : "Players pending",
         handicap: gameTeam.handicap ?? gameTeam.hcp ?? "-",
         score: currentResult?.gross ?? currentResult?.gross_score ?? currentResult?.score ?? "-",
         net: currentResult?.net ?? currentResult?.net_score ?? "-",
@@ -273,7 +296,7 @@ export default function GameLive() {
         balance,
       };
     });
-  }, [gameTeams, teams, players, holeResults, wallets, purchases, liveData]);
+  }, [gameTeams, teams, players, gameInvites, holeResults, wallets, purchases, liveData]);
 
   if (loading) return <div className="p-4">Loading live match...</div>;
   if (error) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
