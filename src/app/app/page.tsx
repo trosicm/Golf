@@ -28,15 +28,16 @@ export default function AppPage() {
       }
       setProfile(profile);
 
-      // Buscar game_invite por email normalizado
-      const email = (profile.email || "").toLowerCase();
-      const { data: invite, error: inviteError } = await supabase
+      // Buscar game_invite por email normalizado y robusto
+      const email = (profile.email || "").trim().toLowerCase();
+      const { data: invites, error: inviteError } = await supabase
         .from("game_invites")
         .select("*")
-        .eq("email", email)
-        .single();
+        .ilike("email", email)
+        .limit(1);
+      const invite = invites?.[0];
       if (inviteError || !invite) {
-        setError("No game assigned to this user.");
+        setError(`No game assigned to this user (email: ${email})`);
         setLoading(false);
         return;
       }
