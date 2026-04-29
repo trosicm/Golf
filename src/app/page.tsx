@@ -1,4 +1,3 @@
-
 "use client";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -19,8 +18,8 @@ export default function Home() {
         <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-[var(--gr-sand)] text-center">Golf Rivals</h1>
         <Badge variant="gold" className="mb-3">Every Hole Has a Price.</Badge>
         <p className="text-base text-[var(--gr-text-muted)] mb-6 text-center max-w-xs">Play smart. Win the hole.<br />Premium live golf competition for friends. Skins, pots, mulligans, reverse, and real rivalry.</p>
-        <Link href="/create-game" className="w-full max-w-xs mb-3">
-          <Button size="lg" variant="primary" className="w-full">Start New Game</Button>
+        <Link href="/app" className="w-full max-w-xs mb-3">
+          <Button size="lg" variant="primary" className="w-full">Open Match Dashboard</Button>
         </Link>
         <UserMenu />
       </div>
