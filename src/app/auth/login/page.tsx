@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import { ensureProfileFromInvite } from "../../../lib/golfrivals/auth";
 import { useRouter } from "next/navigation";
 
 export default function Login() {
@@ -15,9 +16,19 @@ export default function Login() {
     setLoading(true);
     setError("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) setError(error.message);
-    else router.push("/profile");
+    if (error) {
+      setLoading(false);
+      setError(error.message);
+      return;
+    }
+    try {
+      await ensureProfileFromInvite();
+      setLoading(false);
+      router.push("/app");
+    } catch (err: any) {
+      setLoading(false);
+      setError(err.message || "Login failed");
+    }
   };
 
   return (

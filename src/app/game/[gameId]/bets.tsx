@@ -55,6 +55,43 @@ export default function Bets() {
     setType("long-drive"); setAmount(""); setDesc(""); setHole(""); setTeams([]); setError("");
   };
 
+  // Nueva función para iniciar cierre de apuesta
+  const handleSetWinner = (betId: string, winnerTeamId: string) => {
+    const updatedBets = (game.extraBets || []).map((b: any) =>
+      b.id === betId
+        ? {
+            ...b,
+            winnerTeamId,
+            status: 'pending-confirmation',
+            confirmations: b.teamsInvolved.map((teamId: string) => ({ teamId, confirmed: false })),
+          }
+        : b
+    );
+    const updated = { ...game, extraBets: updatedBets };
+    localStorage.setItem(`golfrivals-game-${gameId}`, JSON.stringify(updated));
+    setGame(updated);
+  };
+
+  // Confirmar resultado por equipo
+  const handleConfirmBet = (betId: string, teamId: string) => {
+    const updatedBets = (game.extraBets || []).map((b: any) => {
+      if (b.id !== betId) return b;
+      const confirmations = (b.confirmations || []).map((c: any) =>
+        c.teamId === teamId ? { ...c, confirmed: true } : c
+      );
+      // Si todos confirman, cerrar apuesta
+      const allConfirmed = confirmations.every((c: any) => c.confirmed);
+      return {
+        ...b,
+        confirmations,
+        status: allConfirmed ? 'closed' : 'pending-confirmation',
+      };
+    });
+    const updated = { ...game, extraBets: updatedBets };
+    localStorage.setItem(`golfrivals-game-${gameId}`, JSON.stringify(updated));
+    setGame(updated);
+  };
+
   return (
     <div className="p-4 card mb-4">
       <h2 className="text-xl font-bold mb-2">Extra Bets</h2>
@@ -91,6 +128,39 @@ export default function Bets() {
               <br/>
               <span className="text-xs">Teams: {b.teamsInvolved.map((id: string) => game.teams.find((t: any) => t.id === id)?.name).join(", ")}</span>
               <span className="ml-2 text-xs">Status: {b.status}</span>
+              {/* Si está abierta, permitir marcar ganador */}
+              {b.status === 'open' && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="text-xs">Marcar ganador:</span>
+                  {b.teamsInvolved.map((id: string) => (
+                    <button key={id} className="btn btn-blue btn-xs" onClick={() => handleSetWinner(b.id, id)}>
+                      {game.teams.find((t: any) => t.id === id)?.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Si está pendiente de confirmación, mostrar confirmaciones */}
+              {b.status === 'pending-confirmation' && (
+                <div className="mt-2 flex flex-col gap-1">
+                  <span className="text-xs">Confirmaciones:</span>
+                  {b.confirmations?.map((c: any) => (
+                    <div key={c.teamId} className="flex items-center gap-2">
+                      <span>{game.teams.find((t: any) => t.id === c.teamId)?.name}:</span>
+                      {c.confirmed ? (
+                        <span className="text-success">✔️ Confirmado</span>
+                      ) : (
+                        <button className="btn btn-gold btn-xs" onClick={() => handleConfirmBet(b.id, c.teamId)}>
+                          Confirmar
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Si está cerrada, mostrar ganador */}
+              {b.status === 'closed' && b.winnerTeamId && (
+                <div className="mt-2 text-xs text-success">Ganador: {game.teams.find((t: any) => t.id === b.winnerTeamId)?.name}</div>
+              )}
             </li>
           ))}
         </ul>

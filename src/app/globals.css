@@ -1,4 +1,25 @@
+
 @import "tailwindcss";
+
+/* --- GOLF RIVALS PREMIUM BRAND VARIABLES --- */
+:root {
+  --gr-midnight: #0F2D28;
+  --gr-carbon: #181B1E;
+  --gr-sand: #EFE8DA;
+  --gr-gold: #C6A15B;
+  --gr-turf: #5FA36A;
+  --gr-danger: #C95C4A;
+  --gr-warning: #D9A441;
+  --gr-border: #2E3A36;
+
+  /* Utilidades */
+  --gr-card: rgba(15, 45, 40, 0.78);
+  --gr-card-strong: rgba(24, 27, 30, 0.94);
+  --gr-text-muted: rgba(239, 232, 218, 0.72);
+  --gr-gold-soft: rgba(198, 161, 91, 0.18);
+  --gr-turf-soft: rgba(95, 163, 106, 0.18);
+  --gr-danger-soft: rgba(201, 92, 74, 0.16);
+}
 
 /* --- PREMIUM BRAND PALETTE --- */
 :root {
@@ -29,8 +50,8 @@
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: linear-gradient(135deg, var(--gr-carbon) 0%, var(--gr-midnight) 100%);
+  color: var(--gr-sand);
   font-family: var(--brand-font);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
