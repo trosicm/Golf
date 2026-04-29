@@ -304,16 +304,20 @@ export default function GameLive() {
         hole_number: liveData.currentHoleNumber,
         team_id: result.teamId,
         gross_score: result.grossScore,
+        gross: result.grossScore,
+        score: result.grossScore,
         strokes_received: result.strokesReceived,
         net_score: result.netScore,
+        net: result.netScore,
         is_winner: winnerTeamId === result.teamId,
         is_tied: provisionalResult.type === "tie",
         result_type: provisionalResult.type === "winner" ? "winner" : "carry",
         pot_value: liveData.currentPot,
       }));
       await insertWithFallback("hole_results", rows, [
-        ({ result_type, is_tied, pot_value, ...row }) => row,
-        ({ hole_id, result_type, is_tied, pot_value, strokes_received, ...row }) => row,
+        ({ gross_score, net_score, result_type, is_tied, pot_value, ...row }) => row,
+        ({ gross_score, gross, net_score, result_type, is_tied, pot_value, ...row }) => row,
+        ({ hole_id, gross_score, gross, net_score, net, result_type, is_tied, pot_value, strokes_received, ...row }) => row,
       ]);
       if (mode === "carry" && !isFinalHole) await supabase.from("holes").update({ carry_in: liveData.currentPot }).eq("game_id", gameId).eq("hole_number", nextHole);
       const { error: gameUpdateError } = await supabase.from("games").update({ current_hole: nextHole, status: isFinalHole ? "completed" : game?.status ?? "draft" }).eq("id", gameId);
