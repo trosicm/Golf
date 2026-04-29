@@ -11,23 +11,23 @@ type QueryResult = {
 };
 
 const DEFAULT_HOLES = [
-  { id: "fallback-1", hole_number: 1, par: 5, stroke_index: 4, base_value: 65 },
-  { id: "fallback-2", hole_number: 2, par: 4, stroke_index: 6, base_value: 65 },
-  { id: "fallback-3", hole_number: 3, par: 4, stroke_index: 14, base_value: 65 },
-  { id: "fallback-4", hole_number: 4, par: 4, stroke_index: 12, base_value: 65 },
-  { id: "fallback-5", hole_number: 5, par: 5, stroke_index: 2, base_value: 65 },
-  { id: "fallback-6", hole_number: 6, par: 3, stroke_index: 10, base_value: 65 },
-  { id: "fallback-7", hole_number: 7, par: 4, stroke_index: 16, base_value: 65 },
-  { id: "fallback-8", hole_number: 8, par: 4, stroke_index: 8, base_value: 65 },
-  { id: "fallback-9", hole_number: 9, par: 3, stroke_index: 18, base_value: 65 },
-  { id: "fallback-10", hole_number: 10, par: 4, stroke_index: 9, base_value: 65 },
-  { id: "fallback-11", hole_number: 11, par: 5, stroke_index: 17, base_value: 65 },
+  { id: "fallback-1", hole_number: 1, par: 5, stroke_index: 4, base_value: 50 },
+  { id: "fallback-2", hole_number: 2, par: 4, stroke_index: 6, base_value: 50 },
+  { id: "fallback-3", hole_number: 3, par: 4, stroke_index: 14, base_value: 45 },
+  { id: "fallback-4", hole_number: 4, par: 4, stroke_index: 12, base_value: 45 },
+  { id: "fallback-5", hole_number: 5, par: 5, stroke_index: 2, base_value: 75 },
+  { id: "fallback-6", hole_number: 6, par: 3, stroke_index: 10, base_value: 60 },
+  { id: "fallback-7", hole_number: 7, par: 4, stroke_index: 16, base_value: 80 },
+  { id: "fallback-8", hole_number: 8, par: 4, stroke_index: 8, base_value: 50 },
+  { id: "fallback-9", hole_number: 9, par: 3, stroke_index: 18, base_value: 60 },
+  { id: "fallback-10", hole_number: 10, par: 4, stroke_index: 9, base_value: 50 },
+  { id: "fallback-11", hole_number: 11, par: 5, stroke_index: 17, base_value: 50 },
   { id: "fallback-12", hole_number: 12, par: 4, stroke_index: 3, base_value: 65 },
-  { id: "fallback-13", hole_number: 13, par: 3, stroke_index: 15, base_value: 65 },
-  { id: "fallback-14", hole_number: 14, par: 5, stroke_index: 1, base_value: 65 },
-  { id: "fallback-15", hole_number: 15, par: 4, stroke_index: 11, base_value: 65 },
-  { id: "fallback-16", hole_number: 16, par: 4, stroke_index: 7, base_value: 65 },
-  { id: "fallback-17", hole_number: 17, par: 3, stroke_index: 13, base_value: 65 },
+  { id: "fallback-13", hole_number: 13, par: 3, stroke_index: 15, base_value: 60 },
+  { id: "fallback-14", hole_number: 14, par: 5, stroke_index: 1, base_value: 80 },
+  { id: "fallback-15", hole_number: 15, par: 4, stroke_index: 11, base_value: 45 },
+  { id: "fallback-16", hole_number: 16, par: 4, stroke_index: 7, base_value: 50 },
+  { id: "fallback-17", hole_number: 17, par: 3, stroke_index: 13, base_value: 70 },
   { id: "fallback-18", hole_number: 18, par: 4, stroke_index: 5, base_value: 65 },
 ];
 
@@ -40,7 +40,7 @@ function getStrokeIndex(hole: any) {
 }
 
 function getHoleValue(hole: any) {
-  return Number(hole.price ?? hole.value ?? hole.hole_value ?? hole.base_value ?? hole.baseValue ?? 65);
+  return Number(hole.price ?? hole.value ?? hole.hole_value ?? hole.base_value ?? hole.baseValue ?? 0);
 }
 
 function getGross(result: any) {
@@ -57,6 +57,13 @@ function getFrontNine(holes: any[]) {
 
 function getBackNine(holes: any[]) {
   return holes.filter((hole) => getHoleNumber(hole) >= 10 && getHoleNumber(hole) <= 18);
+}
+
+function mergeHolesWithDefaults(holes: any[]) {
+  return DEFAULT_HOLES.map((defaultHole) => {
+    const savedHole = holes.find((hole) => getHoleNumber(hole) === defaultHole.hole_number);
+    return savedHole ? { ...defaultHole, ...savedHole } : defaultHole;
+  });
 }
 
 export default function ScorecardPage() {
@@ -131,7 +138,7 @@ export default function ScorecardPage() {
         return;
       }
 
-      const sortedHoles = [...(holesRes.data || [])].sort((a, b) => getHoleNumber(a) - getHoleNumber(b));
+      const sortedHoles = mergeHolesWithDefaults(holesRes.data || []).sort((a, b) => getHoleNumber(a) - getHoleNumber(b));
 
       setHoles(sortedHoles);
       setGameTeams(gameTeamsRes.data || []);
