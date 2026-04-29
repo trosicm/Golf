@@ -34,6 +34,8 @@ const purchaseAmount = (row: any) => n(row?.cost ?? row?.amount ?? row?.value ??
 const purchaseType = (row: any) => String(row?.type ?? row?.purchase_type ?? row?.kind ?? "").toLowerCase();
 const purchaseTeamId = (row: any) => row?.team_id ?? row?.teamId;
 const purchaseHoleNumber = (row: any) => row?.hole_number ?? row?.holeNumber ?? row?.number;
+const potValue = (row: any) => n(row?.pot_value ?? row?.pot ?? row?.value ?? row?.amount);
+const isWinningResult = (row: any, teamId: string) => row?.is_winner === true || row?.winner === true || row?.winner_team_id === teamId;
 
 function teamPlayerIds(team: any) { return [team?.player_1_id, team?.player_2_id, team?.player1_id, team?.player2_id, team?.player_a_id, team?.player_b_id].filter(Boolean); }
 function playerName(player: any) { return player?.name ?? player?.display_name ?? player?.full_name ?? player?.nickname ?? player?.email ?? player?.id; }
@@ -114,18 +116,19 @@ export default function GameLive() {
       const playerIds = Array.from(new Set((fromTeam.length ? fromTeam : fromInvites.length ? fromInvites : fallbackIds).filter(Boolean)));
       const teamResults = holeResults.filter((result) => (result.team_id ?? result.teamId) === teamId);
       const currentResult = teamResults.find((result) => (result.hole_number ?? result.holeNumber ?? result.number) === liveData.currentHoleNumber || (result.hole_id ?? result.holeId) === liveData.currentHole.id);
-      const holesWon = teamResults.filter((result) => result.is_winner || result.winner || result.winner_team_id === teamId).length;
+      const winnerResults = teamResults.filter((result) => isWinningResult(result, teamId));
+      const holesWon = winnerResults.length;
+      const won = winnerResults.reduce((sum, result) => sum + potValue(result), 0);
       const teamPurchases = purchases.filter((purchase) => purchaseTeamId(purchase) === teamId || playerIds.includes(purchase.player_id ?? purchase.playerId));
       const spent = teamPurchases.reduce((sum, purchase) => sum + purchaseAmount(purchase), 0);
       const mulligansUsed = teamPurchases.filter((purchase) => purchaseType(purchase).includes("mulligan") && !purchaseType(purchase).includes("reverse")).length;
       const reversesUsed = teamPurchases.filter((purchase) => purchaseType(purchase).includes("reverse")).length;
       const currentHoleMulligans = teamPurchases.filter((purchase) => purchaseHoleNumber(purchase) === liveData.currentHoleNumber && purchaseType(purchase).includes("mulligan") && !purchaseType(purchase).includes("reverse")).length;
       const currentHoleReverses = teamPurchases.filter((purchase) => purchaseHoleNumber(purchase) === liveData.currentHoleNumber && purchaseType(purchase).includes("reverse")).length;
-      const walletBalance = wallets.filter((wallet) => (wallet.team_id ?? wallet.teamId) === teamId || playerIds.includes(wallet.player_id ?? wallet.playerId)).reduce((sum, wallet) => sum + n(wallet.balance ?? wallet.amount ?? wallet.current_balance ?? wallet.total), 0);
       const playerNames = playerIds.map((id) => playerName(players.find((player) => player.id === id))).filter(Boolean);
-      return { id: teamId, position: index + 1, name: teamRecord?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", handicap: teamRecord?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-", score: currentResult?.gross ?? currentResult?.gross_score ?? currentResult?.score ?? "-", net: currentResult?.net ?? currentResult?.net_score ?? "-", holesWon, mulligansLeft: Math.max(0, n(game?.max_mulligans_per_team, 5) - mulligansUsed), reversesLeft: Math.max(0, n(game?.max_reverses_per_team, 2) - reversesUsed), currentHoleMulligans, currentHoleReverses, spent, won: 0, balance: walletBalance || -spent };
+      return { id: teamId, position: index + 1, name: teamRecord?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", handicap: teamRecord?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-", score: currentResult?.gross ?? currentResult?.gross_score ?? currentResult?.score ?? "-", net: currentResult?.net ?? currentResult?.net_score ?? "-", holesWon, mulligansLeft: Math.max(0, n(game?.max_mulligans_per_team, 5) - mulligansUsed), reversesLeft: Math.max(0, n(game?.max_reverses_per_team, 2) - reversesUsed), currentHoleMulligans, currentHoleReverses, spent, won, balance: won - spent };
     });
-  }, [gameTeams, teams, players, gameInvites, holeResults, wallets, purchases, liveData, game]);
+  }, [gameTeams, teams, players, gameInvites, holeResults, purchases, liveData, game]);
 
   const scoringRows = useMemo(() => {
     const si = strokeIndex(liveData.currentHole);
@@ -165,10 +168,7 @@ export default function GameLive() {
 
   const clearExistingHoleResults = async () => {
     const holeId = liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id;
-    if (holeId) {
-      const byHoleId = await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_id", holeId);
-      if (!byHoleId.error) return;
-    }
+    if (holeId) { const byHoleId = await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_id", holeId); if (!byHoleId.error) return; }
     await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_number", liveData.currentHoleNumber);
   };
 
@@ -183,11 +183,7 @@ export default function GameLive() {
       const isFinalHole = liveData.currentHoleNumber >= 18;
       await clearExistingHoleResults();
       const rows = provisionalResult.results.map((result) => ({ game_id: gameId, hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id, hole_number: liveData.currentHoleNumber, team_id: result.teamId, gross_score: result.grossScore, gross: result.grossScore, score: result.grossScore, strokes_received: result.strokesReceived, net_score: result.netScore, net: result.netScore, is_winner: winnerTeamId === result.teamId, is_tied: provisionalResult.type === "tie", result_type: provisionalResult.type === "winner" ? "winner" : "carry", pot_value: liveData.currentPot }));
-      await insertWithFallback("hole_results", rows, [
-        ({ hole_number, gross_score, net_score, result_type, is_tied, pot_value, ...row }) => row,
-        ({ hole_number, gross_score, gross, net_score, result_type, is_tied, pot_value, ...row }) => row,
-        ({ hole_number, hole_id, gross_score, gross, net_score, net, result_type, is_tied, pot_value, strokes_received, ...row }) => row,
-      ]);
+      await insertWithFallback("hole_results", rows, [({ hole_number, gross_score, net_score, result_type, is_tied, pot_value, ...row }) => row, ({ hole_number, gross_score, gross, net_score, result_type, is_tied, pot_value, ...row }) => row, ({ hole_number, hole_id, gross_score, gross, net_score, net, result_type, is_tied, pot_value, strokes_received, ...row }) => row]);
       if (mode === "carry" && !isFinalHole) await supabase.from("holes").update({ carry_in: liveData.currentPot }).eq("game_id", gameId).eq("hole_number", nextHole);
       const { error: gameUpdateError } = await supabase.from("games").update({ current_hole: nextHole, status: isFinalHole ? "completed" : game?.status ?? "draft" }).eq("id", gameId);
       if (gameUpdateError) throw gameUpdateError;
