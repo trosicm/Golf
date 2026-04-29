@@ -10,6 +10,27 @@ type QueryResult = {
   error: any;
 };
 
+const DEFAULT_HOLES = [
+  { id: "fallback-1", hole_number: 1, par: 5, stroke_index: 4, base_value: 65 },
+  { id: "fallback-2", hole_number: 2, par: 4, stroke_index: 6, base_value: 65 },
+  { id: "fallback-3", hole_number: 3, par: 4, stroke_index: 14, base_value: 65 },
+  { id: "fallback-4", hole_number: 4, par: 4, stroke_index: 12, base_value: 65 },
+  { id: "fallback-5", hole_number: 5, par: 5, stroke_index: 2, base_value: 65 },
+  { id: "fallback-6", hole_number: 6, par: 3, stroke_index: 10, base_value: 65 },
+  { id: "fallback-7", hole_number: 7, par: 4, stroke_index: 16, base_value: 65 },
+  { id: "fallback-8", hole_number: 8, par: 4, stroke_index: 8, base_value: 65 },
+  { id: "fallback-9", hole_number: 9, par: 3, stroke_index: 18, base_value: 65 },
+  { id: "fallback-10", hole_number: 10, par: 4, stroke_index: 9, base_value: 65 },
+  { id: "fallback-11", hole_number: 11, par: 5, stroke_index: 17, base_value: 65 },
+  { id: "fallback-12", hole_number: 12, par: 4, stroke_index: 3, base_value: 65 },
+  { id: "fallback-13", hole_number: 13, par: 3, stroke_index: 15, base_value: 65 },
+  { id: "fallback-14", hole_number: 14, par: 5, stroke_index: 1, base_value: 65 },
+  { id: "fallback-15", hole_number: 15, par: 4, stroke_index: 11, base_value: 65 },
+  { id: "fallback-16", hole_number: 16, par: 4, stroke_index: 7, base_value: 65 },
+  { id: "fallback-17", hole_number: 17, par: 3, stroke_index: 13, base_value: 65 },
+  { id: "fallback-18", hole_number: 18, par: 4, stroke_index: 5, base_value: 65 },
+];
+
 function getHoleNumber(hole: any) {
   return hole.hole_number ?? hole.number ?? hole.hole ?? 0;
 }
@@ -126,8 +147,10 @@ export default function ScorecardPage() {
   if (loading) return <div className="p-4">Loading...</div>;
   if (error) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
 
-  const frontNine = getFrontNine(holes);
-  const backNine = getBackNine(holes);
+  const displayHoles = holes.length > 0 ? holes : DEFAULT_HOLES;
+  const usingFallbackHoles = holes.length === 0;
+  const frontNine = getFrontNine(displayHoles);
+  const backNine = getBackNine(displayHoles);
   const orderedHoles = [...frontNine, ...backNine];
 
   const parOut = frontNine.reduce((sum, hole) => sum + Number(hole.par || 0), 0);
@@ -238,49 +261,51 @@ export default function ScorecardPage() {
         </div>
       </div>
 
-      {holes.length === 0 ? (
-        <div className="card mb-4 text-center text-[var(--gr-text-muted)]">No holes found for this match.</div>
-      ) : (
-        <div className="card p-0 overflow-hidden bg-white text-black rounded-2xl">
-          <div className="px-5 py-4 border-b border-black/10 flex items-center justify-between">
-            <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-black/50">Golf Rivals</div>
-              <div className="text-xl font-black">Round 1</div>
-            </div>
-            <div className="text-right text-xs text-black/50">
-              <div>{firstTeamName}</div>
-              <div>Total value: <span className="font-black text-black">{formatMoney(valueTotal)}</span></div>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-sm border-collapse">
-              <tbody>
-                <tr className="border-b border-black/10 text-black/60 uppercase text-xs tracking-wider">
-                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left min-w-[84px]">Hole</th>
-                  {renderHoleCells("hole")}
-                </tr>
-                <tr className="border-b border-black/10 text-black/70">
-                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Par</th>
-                  {renderHoleCells("par")}
-                </tr>
-                <tr className="border-b border-black/10 text-black/70">
-                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Value</th>
-                  {renderHoleCells("value")}
-                </tr>
-                <tr className="border-b border-black/10 font-black text-black">
-                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Score</th>
-                  {renderHoleCells("score")}
-                </tr>
-                <tr className="text-black/80">
-                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Status</th>
-                  {renderHoleCells("status")}
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      {usingFallbackHoles && (
+        <div className="mb-3 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-4 py-3 text-xs text-yellow-100">
+          No holes saved for this match yet. Showing default 18-hole structure.
         </div>
       )}
+
+      <div className="card p-0 overflow-hidden bg-white text-black rounded-2xl">
+        <div className="px-5 py-4 border-b border-black/10 flex items-center justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-black/50">Golf Rivals</div>
+            <div className="text-xl font-black">Round 1</div>
+          </div>
+          <div className="text-right text-xs text-black/50">
+            <div>{firstTeamName}</div>
+            <div>Total value: <span className="font-black text-black">{formatMoney(valueTotal)}</span></div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1080px] text-sm border-collapse">
+            <tbody>
+              <tr className="border-b border-black/10 text-black/60 uppercase text-xs tracking-wider">
+                <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left min-w-[84px]">Hole</th>
+                {renderHoleCells("hole")}
+              </tr>
+              <tr className="border-b border-black/10 text-black/70">
+                <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Par</th>
+                {renderHoleCells("par")}
+              </tr>
+              <tr className="border-b border-black/10 text-black/70">
+                <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Value</th>
+                {renderHoleCells("value")}
+              </tr>
+              <tr className="border-b border-black/10 font-black text-black">
+                <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Score</th>
+                {renderHoleCells("score")}
+              </tr>
+              <tr className="text-black/80">
+                <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Status</th>
+                {renderHoleCells("status")}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       <div className="flex flex-col gap-2 mt-6 sm:flex-row">
         <button className="btn btn-gold w-full" onClick={() => router.push(`/game/${gameId}`)}>
