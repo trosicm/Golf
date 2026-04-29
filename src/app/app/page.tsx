@@ -16,32 +16,39 @@ export default function AppPage() {
         router.push("/auth/login");
         return;
       }
-      const { data: profile, error } = await supabase
+
+      const authEmail = (data.user.email || "").trim().toLowerCase();
+
+      const { data: profileData } = await supabase
         .from("profiles")
         .select("*, player:player_id(*)")
         .eq("id", data.user.id)
-        .single();
-      if (error || !profile) {
-        setError("Profile not found");
-        setLoading(false);
-        return;
-      }
-      setProfile(profile);
+        .maybeSingle();
 
-      // Buscar game_invite por email normalizado y robusto
-      const email = (profile.email || "").trim().toLowerCase();
       const { data: invites, error: inviteError } = await supabase
         .from("game_invites")
         .select("*")
-        .ilike("email", email)
+        .ilike("email", authEmail)
         .limit(1);
-      const invite = invites?.[0];
-      if (inviteError || !invite) {
-        setError(`No game assigned to this user (email: ${email})`);
+
+      const inviteRow = invites?.[0];
+
+      if (inviteError || !inviteRow) {
+        setError(`No game assigned to this user (email: ${authEmail})`);
         setLoading(false);
         return;
       }
-      setInvite(invite);
+
+      const safeProfile = profileData || {
+        id: data.user.id,
+        email: authEmail,
+        display_name: inviteRow.name || authEmail.split("@")[0] || "Player",
+        role: inviteRow.role || "player",
+        player: null,
+      };
+
+      setProfile(safeProfile);
+      setInvite(inviteRow);
       setLoading(false);
     });
   }, [router]);
@@ -51,6 +58,8 @@ export default function AppPage() {
   if (!profile) return null;
 
   const gameId = invite?.game_id;
+  const role = invite?.role || profile.role || "player";
+  const playerName = profile.player?.name || invite?.name || profile.display_name || "Player";
 
   const handleOpenMatch = () => {
     if (gameId) router.push(`/game/${gameId}`);
@@ -69,15 +78,15 @@ export default function AppPage() {
     <div className="p-4 max-w-md mx-auto">
       <h2 className="text-2xl font-bold mb-4">Welcome, {profile.display_name}</h2>
       <div className="mb-2">Email: <span className="font-mono">{profile.email}</span></div>
-      <div className="mb-2">Role: <span className="font-mono">{profile.role}</span></div>
-      <div className="mb-2">Player: <span className="font-mono">{profile.player?.name}</span></div>
+      <div className="mb-2">Role: <span className="font-mono">{role}</span></div>
+      <div className="mb-2">Player: <span className="font-mono">{playerName}</span></div>
       <div className="mb-2">Team: <span className="font-mono">(auto)</span></div>
-      <div className="mb-2">Match: <span className="font-mono">{invite?.game_id ? 'Skins por Hoyos - Villamartin' : 'No match assigned'}</span></div>
+      <div className="mb-2">Match: <span className="font-mono">{invite?.game_id ? "Skins por Hoyos - Villamartin" : "No match assigned"}</span></div>
       <div className="flex flex-col gap-3 mt-6">
         <button className="btn btn-gold w-full" onClick={handleOpenMatch} disabled={!gameId}>Open Match</button>
         <button className="btn btn-gold w-full" onClick={handleScorecard} disabled={!gameId}>Scorecard</button>
         <button className="btn btn-gold w-full" onClick={handleLeaderboard} disabled={!gameId}>Leaderboard</button>
-        {profile.role === "admin" && (
+        {role === "admin" && (
           <button className="btn btn-danger w-full" onClick={handleAdminPanel} disabled={!gameId}>Admin Panel</button>
         )}
       </div>
