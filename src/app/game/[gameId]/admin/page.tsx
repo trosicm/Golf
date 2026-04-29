@@ -223,7 +223,7 @@ export default function AdminPage() {
     const nextWalletDrafts: WalletDrafts = {};
     loadedInvites.forEach((gameInvite: any) => {
       const playerId = gameInvite.player_id ?? gameInvite.playerId;
-      if (!playerId) return;
+      if (!playerId || nextWalletDrafts[playerId] !== undefined) return;
       const wallet = loadedWallets.find((item: any) => (item.player_id ?? item.playerId) === playerId);
       nextWalletDrafts[playerId] = String(getWalletBalance(wallet));
     });
@@ -252,6 +252,7 @@ export default function AdminPage() {
   }, [gameId]);
 
   const playerRows = useMemo(() => {
+    const seenPlayerIds = new Set<string>();
     const inviteRows = gameInvites
       .filter((gameInvite) => gameInvite.player_id || gameInvite.playerId)
       .map((gameInvite, index) => {
@@ -265,6 +266,7 @@ export default function AdminPage() {
 
         return {
           id: playerId,
+          rowKey: `${playerId}-${String(gameInvite.email || index).toLowerCase()}`,
           email: gameInvite.email,
           role: gameInvite.role || "player",
           name: getPlayerDisplayName(player, gameInvite),
@@ -272,6 +274,11 @@ export default function AdminPage() {
           wallet,
           balance: getWalletBalance(wallet),
         };
+      })
+      .filter((row) => {
+        if (seenPlayerIds.has(row.id)) return false;
+        seenPlayerIds.add(row.id);
+        return true;
       });
 
     if (inviteRows.length > 0) return inviteRows;
@@ -280,6 +287,7 @@ export default function AdminPage() {
       const wallet = wallets.find((item) => (item.player_id ?? item.playerId) === player.id);
       return {
         id: player.id,
+        rowKey: `${player.id}-${index}`,
         email: player.email || "",
         role: "player",
         name: getPlayerDisplayName(player),
@@ -542,7 +550,7 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {playerRows.map((player) => (
-              <div key={player.id} className="rounded-2xl border border-[var(--gr-border)] bg-black/10 p-4">
+              <div key={player.rowKey} className="rounded-2xl border border-[var(--gr-border)] bg-black/10 p-4">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <div className="font-black">{player.name}</div>
