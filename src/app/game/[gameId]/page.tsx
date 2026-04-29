@@ -238,6 +238,9 @@ export default function GameLive() {
 
     const getTeamName = (teamId: string) => teams.find((team) => team.id === teamId)?.name || teamId;
     const getPlayerName = (playerId: string) => getPlayerDisplayName(players.find((player) => player.id === playerId)) || playerId;
+    const invitesWithPlayers = [...gameInvites]
+      .filter((gameInvite) => gameInvite.player_id || gameInvite.playerId)
+      .sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
 
     return gameTeams.map((gameTeam, index) => {
       const teamId = getTeamId(gameTeam);
@@ -252,8 +255,11 @@ export default function GameLive() {
         })
         .map((gameInvite) => gameInvite.player_id ?? gameInvite.playerId)
         .filter(Boolean);
-      const fallbackInvitePlayerId = gameInvites[index]?.player_id ?? gameInvites[index]?.playerId;
-      const playerIds = Array.from(new Set([...directPlayerIds, ...playersByTeam, ...invitedPlayerIds, fallbackInvitePlayerId].filter(Boolean)));
+      const fallbackInvitePlayerIds = invitesWithPlayers
+        .slice(index * 2, index * 2 + 2)
+        .map((gameInvite) => gameInvite.player_id ?? gameInvite.playerId)
+        .filter(Boolean);
+      const playerIds = Array.from(new Set([...directPlayerIds, ...playersByTeam, ...invitedPlayerIds, ...fallbackInvitePlayerIds].filter(Boolean)));
       const teamResults = holeResults.filter((result) => (result.team_id ?? result.teamId) === teamId);
       const currentResult = teamResults.find((result) => {
         const resultHoleNumber = result.hole_number ?? result.holeNumber ?? result.number;
