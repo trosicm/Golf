@@ -56,20 +56,18 @@ function getStrokeIndex(hole: any) {
   return hole.stroke_index ?? hole.strokeIndex ?? hole.si ?? "-";
 }
 
-function getTeamId(gameTeam: any) {
+function getGameTeamId(gameTeam: any) {
   return gameTeam.team_id ?? gameTeam.teamId ?? gameTeam.id;
 }
 
-function getPlayerIds(gameTeam: any) {
+function getTeamPlayerIds(team: any) {
   return [
-    gameTeam.player_1_id,
-    gameTeam.player_2_id,
-    gameTeam.player1_id,
-    gameTeam.player2_id,
-    gameTeam.player_a_id,
-    gameTeam.player_b_id,
-    gameTeam.player_id,
-    gameTeam.playerId,
+    team?.player_1_id,
+    team?.player_2_id,
+    team?.player1_id,
+    team?.player2_id,
+    team?.player_a_id,
+    team?.player_b_id,
   ].filter(Boolean);
 }
 
@@ -236,30 +234,23 @@ export default function GameLive() {
       }));
     }
 
-    const getTeamName = (teamId: string) => teams.find((team) => team.id === teamId)?.name || teamId;
     const getPlayerName = (playerId: string) => getPlayerDisplayName(players.find((player) => player.id === playerId)) || playerId;
-    const invitesWithPlayers = [...gameInvites]
-      .filter((gameInvite) => gameInvite.player_id || gameInvite.playerId)
-      .sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
 
     return gameTeams.map((gameTeam, index) => {
-      const teamId = getTeamId(gameTeam);
-      const directPlayerIds = getPlayerIds(gameTeam);
-      const playersByTeam = players
-        .filter((player) => (player.team_id ?? player.teamId ?? player.current_team_id ?? player.currentTeamId) === teamId)
-        .map((player) => player.id);
+      const teamId = getGameTeamId(gameTeam);
+      const teamRecord = teams.find((team) => team.id === teamId);
+      const playerIdsFromTeam = getTeamPlayerIds(teamRecord);
       const invitedPlayerIds = gameInvites
-        .filter((gameInvite) => {
-          const inviteTeamId = gameInvite.team_id ?? gameInvite.teamId;
-          return inviteTeamId === teamId;
-        })
+        .filter((gameInvite) => (gameInvite.team_id ?? gameInvite.teamId) === teamId)
         .map((gameInvite) => gameInvite.player_id ?? gameInvite.playerId)
         .filter(Boolean);
-      const fallbackInvitePlayerIds = invitesWithPlayers
+      const fallbackInvitePlayerIds = gameInvites
+        .filter((gameInvite) => gameInvite.player_id || gameInvite.playerId)
         .slice(index * 2, index * 2 + 2)
         .map((gameInvite) => gameInvite.player_id ?? gameInvite.playerId)
         .filter(Boolean);
-      const playerIds = Array.from(new Set([...directPlayerIds, ...playersByTeam, ...invitedPlayerIds, ...fallbackInvitePlayerIds].filter(Boolean)));
+      const playerIds = Array.from(new Set([...(playerIdsFromTeam.length ? playerIdsFromTeam : invitedPlayerIds.length ? invitedPlayerIds : fallbackInvitePlayerIds)].filter(Boolean)));
+
       const teamResults = holeResults.filter((result) => (result.team_id ?? result.teamId) === teamId);
       const currentResult = teamResults.find((result) => {
         const resultHoleNumber = result.hole_number ?? result.holeNumber ?? result.number;
@@ -267,7 +258,7 @@ export default function GameLive() {
         return resultHoleNumber === liveData.currentHoleNumber || resultHoleId === liveData.currentHole.id;
       });
       const holesWon = teamResults.filter((result) => result.is_winner || result.winner || result.winner_team_id === teamId).length;
-      const teamPurchases = purchases.filter((purchase) => (purchase.team_id ?? purchase.teamId) === teamId);
+      const teamPurchases = purchases.filter((purchase) => (purchase.team_id ?? purchase.teamId) === teamId || playerIds.includes(purchase.player_id ?? purchase.playerId));
       const spent = teamPurchases.reduce((sum, purchase) => {
         const value = Number(purchase.cost ?? purchase.amount ?? purchase.value ?? 0);
         return Number.isFinite(value) ? sum + value : sum;
@@ -289,9 +280,9 @@ export default function GameLive() {
       return {
         id: teamId,
         position: index + 1,
-        name: getTeamName(teamId),
+        name: teamRecord?.name || `Team ${index + 1}`,
         players: playerNames.length > 0 ? playerNames.join(" & ") : "Players pending",
-        handicap: gameTeam.handicap ?? gameTeam.hcp ?? "-",
+        handicap: teamRecord?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-",
         score: currentResult?.gross ?? currentResult?.gross_score ?? currentResult?.score ?? "-",
         net: currentResult?.net ?? currentResult?.net_score ?? "-",
         holesWon,
