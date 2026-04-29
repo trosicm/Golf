@@ -18,23 +18,13 @@ const FALLBACK_TEAMS = [
   { id: "fallback-team-4", name: "Team 4", players: "Player 7 & Player 8", handicap: 16 },
 ];
 
-type CalculatedTeamResult = {
-  teamId: string;
-  name: string;
-  grossScore: number;
-  strokesReceived: number;
-  netScore: number;
-};
-
+type CalculatedTeamResult = { teamId: string; name: string; grossScore: number; strokesReceived: number; netScore: number };
 type ProvisionalResult =
   | { type: "winner"; winner: CalculatedTeamResult; results: CalculatedTeamResult[] }
   | { type: "tie"; tiedTeams: CalculatedTeamResult[]; results: CalculatedTeamResult[] }
   | { type: "error"; message: string };
 
-const n = (value: any, fallback = 0) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
+const n = (value: any, fallback = 0) => { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; };
 const money = (value: number) => `${value > 0 ? "+" : value < 0 ? "-" : ""}€${Math.abs(value).toFixed(0)}`;
 const holeNo = (hole: any) => n(hole?.hole_number ?? hole?.number ?? hole?.hole);
 const holeValue = (hole: any) => n(hole?.price ?? hole?.value ?? hole?.hole_value ?? hole?.base_value ?? hole?.baseValue);
@@ -45,30 +35,15 @@ const purchaseType = (row: any) => String(row?.type ?? row?.purchase_type ?? row
 const purchaseTeamId = (row: any) => row?.team_id ?? row?.teamId;
 const purchaseHoleNumber = (row: any) => row?.hole_number ?? row?.holeNumber ?? row?.number;
 
-function teamPlayerIds(team: any) {
-  return [team?.player_1_id, team?.player_2_id, team?.player1_id, team?.player2_id, team?.player_a_id, team?.player_b_id].filter(Boolean);
-}
-function playerName(player: any) {
-  return player?.name ?? player?.display_name ?? player?.full_name ?? player?.nickname ?? player?.email ?? player?.id;
-}
-function strokesReceived(combinedHandicap: any, siValue: any) {
-  const handicap = n(combinedHandicap, NaN);
-  const si = n(siValue, NaN);
-  if (!Number.isFinite(handicap) || !Number.isFinite(si) || si < 1) return 0;
-  return Math.floor(handicap / 18) + (si <= Math.floor(handicap % 18) ? 1 : 0);
-}
-function mergeHoles(holes: any[]) {
-  return DEFAULT_HOLES.map((fallback) => {
-    const saved = holes.find((hole) => holeNo(hole) === fallback.hole_number);
-    return saved ? { ...fallback, ...saved } : fallback;
-  }).sort((a, b) => holeNo(a) - holeNo(b));
-}
+function teamPlayerIds(team: any) { return [team?.player_1_id, team?.player_2_id, team?.player1_id, team?.player2_id, team?.player_a_id, team?.player_b_id].filter(Boolean); }
+function playerName(player: any) { return player?.name ?? player?.display_name ?? player?.full_name ?? player?.nickname ?? player?.email ?? player?.id; }
+function strokesReceived(combinedHandicap: any, siValue: any) { const handicap = n(combinedHandicap, NaN); const si = n(siValue, NaN); if (!Number.isFinite(handicap) || !Number.isFinite(si) || si < 1) return 0; return Math.floor(handicap / 18) + (si <= Math.floor(handicap % 18) ? 1 : 0); }
+function mergeHoles(holes: any[]) { return DEFAULT_HOLES.map((fallback) => { const saved = holes.find((hole) => holeNo(hole) === fallback.hole_number); return saved ? { ...fallback, ...saved } : fallback; }).sort((a, b) => holeNo(a) - holeNo(b)); }
 
 export default function GameLive() {
   const params = useParams();
   const router = useRouter();
   const gameId = Array.isArray(params?.gameId) ? params.gameId[0] : params?.gameId;
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -88,29 +63,14 @@ export default function GameLive() {
 
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true);
-      setError("");
+      setLoading(true); setError("");
       const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData?.user) {
-        router.push("/auth/login");
-        return;
-      }
-
+      if (userError || !userData?.user) { router.push("/auth/login"); return; }
       const email = (userData.user.email || "").trim().toLowerCase();
       const { data: invites, error: inviteError } = await supabase.from("game_invites").select("*").ilike("email", email).eq("game_id", gameId).limit(1);
-      if (inviteError) {
-        setError(`Could not check invitation: ${inviteError.message}`);
-        setLoading(false);
-        return;
-      }
-      const inviteRow = invites?.[0];
-      setInvite(inviteRow);
-      if (!inviteRow) {
-        setError(`You are not invited to this match. Email: ${email}`);
-        setLoading(false);
-        return;
-      }
-
+      if (inviteError) { setError(`Could not check invitation: ${inviteError.message}`); setLoading(false); return; }
+      const inviteRow = invites?.[0]; setInvite(inviteRow);
+      if (!inviteRow) { setError(`You are not invited to this match. Email: ${email}`); setLoading(false); return; }
       const [gameRes, holesRes, gameTeamsRes, teamsRes, playersRes, invitesRes, resultsRes, walletsRes, purchasesRes] = await Promise.all([
         supabase.from("games").select("*").eq("id", gameId).maybeSingle(),
         supabase.from("holes").select("*").eq("game_id", gameId),
@@ -122,27 +82,9 @@ export default function GameLive() {
         supabase.from("game_player_wallets").select("*").eq("game_id", gameId),
         supabase.from("purchases").select("*").eq("game_id", gameId),
       ]);
-
-      const failed = [
-        ["games", gameRes], ["holes", holesRes], ["game_teams", gameTeamsRes], ["teams", teamsRes], ["players", playersRes],
-        ["game_invites", invitesRes], ["hole_results", resultsRes], ["game_player_wallets", walletsRes], ["purchases", purchasesRes],
-      ].find(([, res]: any) => res.error);
-      if (failed) {
-        setError(`${failed[0]}: ${(failed[1] as any).error.message}`);
-        setLoading(false);
-        return;
-      }
-
-      setGame(gameRes.data);
-      setHoles(mergeHoles(holesRes.data || []));
-      setGameTeams(gameTeamsRes.data || []);
-      setTeams(teamsRes.data || []);
-      setPlayers(playersRes.data || []);
-      setGameInvites(invitesRes.data || []);
-      setHoleResults(resultsRes.data || []);
-      setWallets(walletsRes.data || []);
-      setPurchases(purchasesRes.data || []);
-      setLoading(false);
+      const failed = [["games", gameRes], ["holes", holesRes], ["game_teams", gameTeamsRes], ["teams", teamsRes], ["players", playersRes], ["game_invites", invitesRes], ["hole_results", resultsRes], ["game_player_wallets", walletsRes], ["purchases", purchasesRes]].find(([, res]: any) => res.error);
+      if (failed) { setError(`${failed[0]}: ${(failed[1] as any).error.message}`); setLoading(false); return; }
+      setGame(gameRes.data); setHoles(mergeHoles(holesRes.data || [])); setGameTeams(gameTeamsRes.data || []); setTeams(teamsRes.data || []); setPlayers(playersRes.data || []); setGameInvites(invitesRes.data || []); setHoleResults(resultsRes.data || []); setWallets(walletsRes.data || []); setPurchases(purchasesRes.data || []); setLoading(false);
     };
     fetchData();
   }, [gameId, router]);
@@ -163,7 +105,6 @@ export default function GameLive() {
 
   const teamRows = useMemo(() => {
     if (gameTeams.length === 0) return FALLBACK_TEAMS.map((team, index) => ({ ...team, position: index + 1, score: "-", net: "-", holesWon: 0, mulligansLeft: 5, reversesLeft: 2, spent: 0, won: 0, balance: 0, currentHoleMulligans: 0, currentHoleReverses: 0 }));
-
     return gameTeams.map((gameTeam, index) => {
       const teamId = gameTeamId(gameTeam);
       const teamRecord = teams.find((team) => team.id === teamId);
@@ -182,64 +123,27 @@ export default function GameLive() {
       const currentHoleReverses = teamPurchases.filter((purchase) => purchaseHoleNumber(purchase) === liveData.currentHoleNumber && purchaseType(purchase).includes("reverse")).length;
       const walletBalance = wallets.filter((wallet) => (wallet.team_id ?? wallet.teamId) === teamId || playerIds.includes(wallet.player_id ?? wallet.playerId)).reduce((sum, wallet) => sum + n(wallet.balance ?? wallet.amount ?? wallet.current_balance ?? wallet.total), 0);
       const playerNames = playerIds.map((id) => playerName(players.find((player) => player.id === id))).filter(Boolean);
-      return {
-        id: teamId,
-        position: index + 1,
-        name: teamRecord?.name || `Team ${index + 1}`,
-        players: playerNames.length ? playerNames.join(" & ") : "Players pending",
-        handicap: teamRecord?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-",
-        score: currentResult?.gross ?? currentResult?.gross_score ?? currentResult?.score ?? "-",
-        net: currentResult?.net ?? currentResult?.net_score ?? "-",
-        holesWon,
-        mulligansLeft: Math.max(0, n(game?.max_mulligans_per_team, 5) - mulligansUsed),
-        reversesLeft: Math.max(0, n(game?.max_reverses_per_team, 2) - reversesUsed),
-        currentHoleMulligans,
-        currentHoleReverses,
-        spent,
-        won: 0,
-        balance: walletBalance || -spent,
-      };
+      return { id: teamId, position: index + 1, name: teamRecord?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", handicap: teamRecord?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-", score: currentResult?.gross ?? currentResult?.gross_score ?? currentResult?.score ?? "-", net: currentResult?.net ?? currentResult?.net_score ?? "-", holesWon, mulligansLeft: Math.max(0, n(game?.max_mulligans_per_team, 5) - mulligansUsed), reversesLeft: Math.max(0, n(game?.max_reverses_per_team, 2) - reversesUsed), currentHoleMulligans, currentHoleReverses, spent, won: 0, balance: walletBalance || -spent };
     });
   }, [gameTeams, teams, players, gameInvites, holeResults, wallets, purchases, liveData, game]);
 
   const scoringRows = useMemo(() => {
     const si = strokeIndex(liveData.currentHole);
-    return teamRows.map((team) => {
-      const existingGross = team.score !== "-" ? String(team.score) : "";
-      const grossInput = grossScores[team.id] ?? existingGross;
-      const grossNumber = grossInput === "" ? NaN : Number(grossInput);
-      const received = strokesReceived(team.handicap, si);
-      return { ...team, grossInput, strokesReceived: received, calculatedNet: Number.isFinite(grossNumber) ? grossNumber - received : null };
-    });
+    return teamRows.map((team) => { const existingGross = team.score !== "-" ? String(team.score) : ""; const grossInput = grossScores[team.id] ?? existingGross; const grossNumber = grossInput === "" ? NaN : Number(grossInput); const received = strokesReceived(team.handicap, si); return { ...team, grossInput, strokesReceived: received, calculatedNet: Number.isFinite(grossNumber) ? grossNumber - received : null }; });
   }, [teamRows, grossScores, liveData.currentHole]);
 
-  useEffect(() => {
-    setGrossScores({});
-    setProvisionalResult(null);
-    setMessage("");
-  }, [liveData.currentHoleNumber]);
+  useEffect(() => { setGrossScores({}); setProvisionalResult(null); setMessage(""); }, [liveData.currentHoleNumber]);
 
   const insertWithFallback = async (table: string, rows: any[], fallbacks: ((row: any) => any)[]) => {
     const variants = [rows, ...fallbacks.map((fn) => rows.map(fn))];
     let lastError: any = null;
-    for (const variant of variants) {
-      const { error: insertError } = await supabase.from(table).insert(variant);
-      if (!insertError) return;
-      lastError = insertError;
-    }
+    for (const variant of variants) { const { error: insertError } = await supabase.from(table).insert(variant); if (!insertError) return; lastError = insertError; }
     throw lastError;
   };
 
   const calculateWinner = () => {
     const results: CalculatedTeamResult[] = [];
-    for (const team of scoringRows) {
-      const grossScore = Number(team.grossInput);
-      if (team.grossInput === "" || !Number.isFinite(grossScore) || grossScore <= 0) {
-        setProvisionalResult({ type: "error", message: "Enter a valid gross score for every team before calculating." });
-        return;
-      }
-      results.push({ teamId: team.id, name: team.name, grossScore, strokesReceived: team.strokesReceived, netScore: grossScore - team.strokesReceived });
-    }
+    for (const team of scoringRows) { const grossScore = Number(team.grossInput); if (team.grossInput === "" || !Number.isFinite(grossScore) || grossScore <= 0) { setProvisionalResult({ type: "error", message: "Enter a valid gross score for every team before calculating." }); return; } results.push({ teamId: team.id, name: team.name, grossScore, strokesReceived: team.strokesReceived, netScore: grossScore - team.strokesReceived }); }
     const bestNet = Math.min(...results.map((result) => result.netScore));
     const tiedTeams = results.filter((result) => result.netScore === bestNet);
     setProvisionalResult(tiedTeams.length === 1 ? { type: "winner", winner: tiedTeams[0], results } : { type: "tie", tiedTeams, results });
@@ -248,90 +152,49 @@ export default function GameLive() {
   const buyPurchase = async (team: any, type: "mulligan" | "reverse") => {
     if (!gameId || saving) return;
     const reverseUsedThisHole = liveData.currentPurchases.some((purchase) => purchaseType(purchase).includes("reverse"));
-    if (type === "mulligan" && (team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1))) {
-      setMessage("Mulligan limit reached for this team.");
-      return;
-    }
-    if (type === "reverse" && (team.reversesLeft <= 0 || reverseUsedThisHole || team.currentHoleReverses >= 1)) {
-      setMessage("Reverse limit reached for this hole.");
-      return;
-    }
-
-    setSaving(true);
-    setMessage("");
+    if (type === "mulligan" && (team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1))) { setMessage("Mulligan limit reached for this team."); return; }
+    if (type === "reverse" && (team.reversesLeft <= 0 || reverseUsedThisHole || team.currentHoleReverses >= 1)) { setMessage("Reverse limit reached for this hole."); return; }
+    setSaving(true); setMessage("");
     try {
       const amount = type === "mulligan" ? n(game?.mulligan_price, 50) : liveData.currentPot;
-      const row = {
-        game_id: gameId,
-        hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id,
-        hole_number: liveData.currentHoleNumber,
-        team_id: team.id,
-        type,
-        purchase_type: type,
-        amount,
-        cost: amount,
-        value: amount,
-      };
-      await insertWithFallback("purchases", [row], [
-        ({ purchase_type, value, ...rest }) => rest,
-        ({ hole_id, purchase_type, value, ...rest }) => rest,
-        ({ hole_id, type: _type, purchase_type, value, ...rest }) => rest,
-      ]);
-      setPurchases((current) => [...current, row]);
-      setProvisionalResult(null);
-      setMessage(type === "mulligan" ? `Mulligan added: ${team.name} +€${amount}` : `Reverse added: ${team.name} +€${amount}`);
-    } catch (purchaseError: any) {
-      setMessage(`Could not add purchase: ${purchaseError?.message || "Unknown Supabase error"}`);
-    } finally {
-      setSaving(false);
+      const row = { game_id: gameId, hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id, hole_number: liveData.currentHoleNumber, team_id: team.id, type, purchase_type: type, amount, cost: amount, value: amount };
+      await insertWithFallback("purchases", [row], [({ purchase_type, value, ...rest }) => rest, ({ hole_id, purchase_type, value, ...rest }) => rest, ({ hole_id, type: _type, purchase_type, value, ...rest }) => rest]);
+      setPurchases((current) => [...current, row]); setProvisionalResult(null); setMessage(type === "mulligan" ? `Mulligan added: ${team.name} +€${amount}` : `Reverse added: ${team.name} +€${amount}`);
+    } catch (purchaseError: any) { setMessage(`Could not add purchase: ${purchaseError?.message || "Unknown Supabase error"}`); } finally { setSaving(false); }
+  };
+
+  const clearExistingHoleResults = async () => {
+    const holeId = liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id;
+    if (holeId) {
+      const byHoleId = await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_id", holeId);
+      if (!byHoleId.error) return;
     }
+    await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_number", liveData.currentHoleNumber);
   };
 
   const confirmHole = async (mode: "winner" | "carry") => {
     if (!gameId || !provisionalResult || provisionalResult.type === "error") return;
     if (mode === "winner" && provisionalResult.type !== "winner") return;
     if (mode === "carry" && provisionalResult.type !== "tie") return;
-    setSaving(true);
-    setMessage("");
+    setSaving(true); setMessage("");
     try {
       const winnerTeamId = provisionalResult.type === "winner" ? provisionalResult.winner.teamId : null;
       const nextHole = Math.min(18, liveData.currentHoleNumber + 1);
       const isFinalHole = liveData.currentHoleNumber >= 18;
-      await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_number", liveData.currentHoleNumber);
-      const rows = provisionalResult.results.map((result) => ({
-        game_id: gameId,
-        hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id,
-        hole_number: liveData.currentHoleNumber,
-        team_id: result.teamId,
-        gross_score: result.grossScore,
-        gross: result.grossScore,
-        score: result.grossScore,
-        strokes_received: result.strokesReceived,
-        net_score: result.netScore,
-        net: result.netScore,
-        is_winner: winnerTeamId === result.teamId,
-        is_tied: provisionalResult.type === "tie",
-        result_type: provisionalResult.type === "winner" ? "winner" : "carry",
-        pot_value: liveData.currentPot,
-      }));
+      await clearExistingHoleResults();
+      const rows = provisionalResult.results.map((result) => ({ game_id: gameId, hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id, hole_number: liveData.currentHoleNumber, team_id: result.teamId, gross_score: result.grossScore, gross: result.grossScore, score: result.grossScore, strokes_received: result.strokesReceived, net_score: result.netScore, net: result.netScore, is_winner: winnerTeamId === result.teamId, is_tied: provisionalResult.type === "tie", result_type: provisionalResult.type === "winner" ? "winner" : "carry", pot_value: liveData.currentPot }));
       await insertWithFallback("hole_results", rows, [
-        ({ gross_score, net_score, result_type, is_tied, pot_value, ...row }) => row,
-        ({ gross_score, gross, net_score, result_type, is_tied, pot_value, ...row }) => row,
-        ({ hole_id, gross_score, gross, net_score, net, result_type, is_tied, pot_value, strokes_received, ...row }) => row,
+        ({ hole_number, gross_score, net_score, result_type, is_tied, pot_value, ...row }) => row,
+        ({ hole_number, gross_score, gross, net_score, result_type, is_tied, pot_value, ...row }) => row,
+        ({ hole_number, hole_id, gross_score, gross, net_score, net, result_type, is_tied, pot_value, strokes_received, ...row }) => row,
       ]);
       if (mode === "carry" && !isFinalHole) await supabase.from("holes").update({ carry_in: liveData.currentPot }).eq("game_id", gameId).eq("hole_number", nextHole);
       const { error: gameUpdateError } = await supabase.from("games").update({ current_hole: nextHole, status: isFinalHole ? "completed" : game?.status ?? "draft" }).eq("id", gameId);
       if (gameUpdateError) throw gameUpdateError;
-      setHoleResults((current) => [...current.filter((result) => (result.hole_number ?? result.holeNumber ?? result.number) !== liveData.currentHoleNumber), ...rows]);
+      setHoleResults((current) => [...current.filter((result) => (result.hole_number ?? result.holeNumber ?? result.number) !== liveData.currentHoleNumber && (result.hole_id ?? result.holeId) !== liveData.currentHole.id), ...rows]);
       setGame((current: any) => ({ ...current, current_hole: nextHole, status: isFinalHole ? "completed" : current?.status ?? "draft" }));
-      setMessage(mode === "winner" ? "Winner confirmed. Moving to next hole." : "Carry confirmed. Pot moves to next hole.");
-      setGrossScores({});
-      setProvisionalResult(null);
-    } catch (confirmError: any) {
-      setMessage(`Could not confirm hole: ${confirmError?.message || "Unknown Supabase error"}`);
-    } finally {
-      setSaving(false);
-    }
+      setMessage(mode === "winner" ? "Winner confirmed. Moving to next hole." : "Carry confirmed. Pot moves to next hole."); setGrossScores({}); setProvisionalResult(null);
+    } catch (confirmError: any) { setMessage(`Could not confirm hole: ${confirmError?.message || "Unknown Supabase error"}`); } finally { setSaving(false); }
   };
 
   if (loading) return <div className="p-4">Loading live match...</div>;
@@ -340,48 +203,10 @@ export default function GameLive() {
 
   return (
     <div className="p-3 max-w-3xl mx-auto">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div><div className="mb-1 flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[var(--gr-turf)]"><span className="live-dot" /> Live Hole</div><h1 className="text-2xl font-black text-[var(--gr-sand)]">{matchName}</h1><div className="text-xs text-[var(--gr-text-muted)] font-mono break-all">{gameId}</div></div>
-        <div className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-xs font-bold text-[var(--gr-text-muted)]">{invite?.role || "player"}</div>
-      </div>
-
-      <section className="card mb-4 p-0 overflow-hidden">
-        <div className="grid grid-cols-3 border-b border-[var(--gr-border)]">
-          <div className="p-4"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Hole</div><div className="text-3xl font-black">{liveData.currentHoleNumber}<span className="text-base text-[var(--gr-text-muted)]"> / 18</span></div></div>
-          <div className="p-4 text-center border-x border-[var(--gr-border)]"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Current Pot</div><div className="text-3xl font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</div></div>
-          <div className="p-4 text-right"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Par / SI</div><div className="text-3xl font-black">{liveData.currentHole.par ?? "-"} / {strokeIndex(liveData.currentHole)}</div></div>
-        </div>
-        <div className="grid grid-cols-4 gap-2 p-4 text-center text-xs sm:text-sm">
-          <div><div className="text-[var(--gr-text-muted)]">Hole Value</div><div className="font-black text-[var(--gr-gold)]">€{liveData.baseValue.toFixed(0)}</div></div>
-          <div><div className="text-[var(--gr-text-muted)]">Carried Over</div><div className="font-black text-[var(--gr-warning)]">€{liveData.carryIn.toFixed(0)}</div></div>
-          <div><div className="text-[var(--gr-text-muted)]">Added</div><div className="font-black text-[var(--gr-turf)]">€{liveData.purchaseTotal.toFixed(0)}</div></div>
-          <div><div className="text-[var(--gr-text-muted)]">Total Pot</div><div className="font-black text-[var(--gr-gold)]">€{liveData.totalPot.toFixed(0)}</div></div>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-3 mb-4">
-        {scoringRows.map((team, index) => (
-          <div key={team.id} className="card mb-0">
-            <div className="flex items-start justify-between gap-3 mb-3"><div><span className={`team-badge team-${(index % 4) + 1}`}>{team.name}</span><div className="mt-2 text-sm text-[var(--gr-text-muted)]">{team.players}</div></div><div className="text-right"><div className="text-xs uppercase text-[var(--gr-text-muted)]">Balance</div><div className={Number(team.balance) < 0 ? "text-2xl font-black text-danger" : "text-2xl font-black text-success"}>{money(Number(team.balance || 0))}</div></div></div>
-            <div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs">
-              <div className="rounded-xl border border-[var(--gr-border)] p-3"><label className="block text-[var(--gr-text-muted)]" htmlFor={`gross-${team.id}`}>Gross</label><input id={`gross-${team.id}`} type="number" inputMode="numeric" min="1" value={team.grossInput} onChange={(event) => { setGrossScores((current) => ({ ...current, [team.id]: event.target.value })); setProvisionalResult(null); setMessage(""); }} className="mt-1 w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-2 py-2 text-center text-xl font-black text-[var(--gr-sand)] outline-none" placeholder="-" /><div className="mt-1 text-[var(--gr-gold)]">Net {team.calculatedNet ?? "-"}</div></div>
-              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Strokes</div><div className="text-xl font-black">{team.strokesReceived}</div><div className="text-[var(--gr-gold)]">HCP {team.handicap}</div></div>
-              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Mulligans</div><div className="text-xl font-black">{team.mulligansLeft}</div><div className="text-[var(--gr-gold)]">1 / hole</div></div>
-              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Reverses</div><div className="text-xl font-black">{team.reversesLeft}</div><div className="text-[var(--gr-gold)]">1 / hole</div></div>
-            </div>
-            <div className="flex items-center justify-between text-xs text-[var(--gr-text-muted)] mb-3"><span>Spent <b className="text-danger">€{Number(team.spent || 0).toFixed(0)}</b></span><span>Won <b className="text-success">€{Number(team.won || 0).toFixed(0)}</b></span><span>Previous <b className="text-[var(--gr-sand)]">{team.score} / {team.net}</b></span></div>
-            <div className="grid grid-cols-2 gap-2"><button className="btn btn-gold" type="button" disabled={saving || team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1)} onClick={() => buyPurchase(team, "mulligan")}>Buy Mulligan €{n(game?.mulligan_price, 50)}</button><button className="btn btn-secondary" type="button" disabled={saving || team.reversesLeft <= 0 || liveData.currentPurchases.some((purchase) => purchaseType(purchase).includes("reverse"))} onClick={() => buyPurchase(team, "reverse")}>Use Reverse €{liveData.currentPot.toFixed(0)}</button></div>
-          </div>
-        ))}
-      </section>
-
-      <section className="card">
-        <div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Actions</div><div className="font-black">Calculate this hole</div></div><div className="text-right text-xs text-[var(--gr-text-muted)]">Economic impact: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span></div></div>
-        {message && <div className={`mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm font-bold ${message.startsWith("Could not") || message.includes("limit") ? "text-danger" : "text-success"}`}>{message}</div>}
-        {provisionalResult && <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">{provisionalResult.type === "error" && <div className="font-bold text-danger">{provisionalResult.message}</div>}{provisionalResult.type === "winner" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div><div className="text-xl font-black text-success">{provisionalResult.winner.name}</div><div className="text-[var(--gr-text-muted)]">Gross {provisionalResult.winner.grossScore} · Strokes {provisionalResult.winner.strokesReceived} · Net {provisionalResult.winner.netScore}</div></div>}{provisionalResult.type === "tie" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div><div className="text-xl font-black text-[var(--gr-warning)]">{provisionalResult.tiedTeams.map((team) => team.name).join(" vs ")}</div><div className="text-[var(--gr-text-muted)]">Same best net: {provisionalResult.tiedTeams[0]?.netScore}. Push / Carry moves this pot to the next hole.</div></div>}</div>}
-        <div className="grid grid-cols-2 gap-2"><button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving}>Calculate Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !provisionalResult || provisionalResult.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !provisionalResult || provisionalResult.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button></div>
-      </section>
-
+      <div className="mb-4 flex items-start justify-between gap-4"><div><div className="mb-1 flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[var(--gr-turf)]"><span className="live-dot" /> Live Hole</div><h1 className="text-2xl font-black text-[var(--gr-sand)]">{matchName}</h1><div className="text-xs text-[var(--gr-text-muted)] font-mono break-all">{gameId}</div></div><div className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-xs font-bold text-[var(--gr-text-muted)]">{invite?.role || "player"}</div></div>
+      <section className="card mb-4 p-0 overflow-hidden"><div className="grid grid-cols-3 border-b border-[var(--gr-border)]"><div className="p-4"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Hole</div><div className="text-3xl font-black">{liveData.currentHoleNumber}<span className="text-base text-[var(--gr-text-muted)]"> / 18</span></div></div><div className="p-4 text-center border-x border-[var(--gr-border)]"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Current Pot</div><div className="text-3xl font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</div></div><div className="p-4 text-right"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Par / SI</div><div className="text-3xl font-black">{liveData.currentHole.par ?? "-"} / {strokeIndex(liveData.currentHole)}</div></div></div><div className="grid grid-cols-4 gap-2 p-4 text-center text-xs sm:text-sm"><div><div className="text-[var(--gr-text-muted)]">Hole Value</div><div className="font-black text-[var(--gr-gold)]">€{liveData.baseValue.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Carried Over</div><div className="font-black text-[var(--gr-warning)]">€{liveData.carryIn.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Added</div><div className="font-black text-[var(--gr-turf)]">€{liveData.purchaseTotal.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Total Pot</div><div className="font-black text-[var(--gr-gold)]">€{liveData.totalPot.toFixed(0)}</div></div></div></section>
+      <section className="grid grid-cols-1 gap-3 mb-4">{scoringRows.map((team, index) => (<div key={team.id} className="card mb-0"><div className="flex items-start justify-between gap-3 mb-3"><div><span className={`team-badge team-${(index % 4) + 1}`}>{team.name}</span><div className="mt-2 text-sm text-[var(--gr-text-muted)]">{team.players}</div></div><div className="text-right"><div className="text-xs uppercase text-[var(--gr-text-muted)]">Balance</div><div className={Number(team.balance) < 0 ? "text-2xl font-black text-danger" : "text-2xl font-black text-success"}>{money(Number(team.balance || 0))}</div></div></div><div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs"><div className="rounded-xl border border-[var(--gr-border)] p-3"><label className="block text-[var(--gr-text-muted)]" htmlFor={`gross-${team.id}`}>Gross</label><input id={`gross-${team.id}`} type="number" inputMode="numeric" min="1" value={team.grossInput} onChange={(event) => { setGrossScores((current) => ({ ...current, [team.id]: event.target.value })); setProvisionalResult(null); setMessage(""); }} className="mt-1 w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-2 py-2 text-center text-xl font-black text-[var(--gr-sand)] outline-none" placeholder="-" /><div className="mt-1 text-[var(--gr-gold)]">Net {team.calculatedNet ?? "-"}</div></div><div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Strokes</div><div className="text-xl font-black">{team.strokesReceived}</div><div className="text-[var(--gr-gold)]">HCP {team.handicap}</div></div><div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Mulligans</div><div className="text-xl font-black">{team.mulligansLeft}</div><div className="text-[var(--gr-gold)]">1 / hole</div></div><div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Reverses</div><div className="text-xl font-black">{team.reversesLeft}</div><div className="text-[var(--gr-gold)]">1 / hole</div></div></div><div className="flex items-center justify-between text-xs text-[var(--gr-text-muted)] mb-3"><span>Spent <b className="text-danger">€{Number(team.spent || 0).toFixed(0)}</b></span><span>Won <b className="text-success">€{Number(team.won || 0).toFixed(0)}</b></span><span>Previous <b className="text-[var(--gr-sand)]">{team.score} / {team.net}</b></span></div><div className="grid grid-cols-2 gap-2"><button className="btn btn-gold" type="button" disabled={saving || team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1)} onClick={() => buyPurchase(team, "mulligan")}>Buy Mulligan €{n(game?.mulligan_price, 50)}</button><button className="btn btn-secondary" type="button" disabled={saving || team.reversesLeft <= 0 || liveData.currentPurchases.some((purchase) => purchaseType(purchase).includes("reverse"))} onClick={() => buyPurchase(team, "reverse")}>Use Reverse €{liveData.currentPot.toFixed(0)}</button></div></div>))}</section>
+      <section className="card"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Actions</div><div className="font-black">Calculate this hole</div></div><div className="text-right text-xs text-[var(--gr-text-muted)]">Economic impact: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span></div></div>{message && <div className={`mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm font-bold ${message.startsWith("Could not") || message.includes("limit") ? "text-danger" : "text-success"}`}>{message}</div>}{provisionalResult && <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">{provisionalResult.type === "error" && <div className="font-bold text-danger">{provisionalResult.message}</div>}{provisionalResult.type === "winner" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div><div className="text-xl font-black text-success">{provisionalResult.winner.name}</div><div className="text-[var(--gr-text-muted)]">Gross {provisionalResult.winner.grossScore} · Strokes {provisionalResult.winner.strokesReceived} · Net {provisionalResult.winner.netScore}</div></div>}{provisionalResult.type === "tie" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div><div className="text-xl font-black text-[var(--gr-warning)]">{provisionalResult.tiedTeams.map((team) => team.name).join(" vs ")}</div><div className="text-[var(--gr-text-muted)]">Same best net: {provisionalResult.tiedTeams[0]?.netScore}. Push / Carry moves this pot to the next hole.</div></div>}</div>}<div className="grid grid-cols-2 gap-2"><button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving}>Calculate Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !provisionalResult || provisionalResult.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !provisionalResult || provisionalResult.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button></div></section>
       <div className="grid grid-cols-2 gap-2 mb-6"><Link href={`/game/${gameId}/scorecard`} className="btn btn-secondary">Scorecard</Link><Link href={`/game/${gameId}/leaderboard`} className="btn btn-secondary">Leaderboard</Link><Link href={`/game/${gameId}/summary`} className="btn btn-gold col-span-2">View Final Summary</Link></div>
     </div>
   );
