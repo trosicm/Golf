@@ -39,6 +39,19 @@ type QueryResult = {
   error: any;
 };
 
+type CalculatedTeamResult = {
+  teamId: string;
+  name: string;
+  grossScore: number;
+  strokesReceived: number;
+  netScore: number;
+};
+
+type ProvisionalResult =
+  | { type: "winner"; winner: CalculatedTeamResult; results: CalculatedTeamResult[] }
+  | { type: "tie"; tiedTeams: CalculatedTeamResult[]; results: CalculatedTeamResult[] }
+  | { type: "error"; message: string };
+
 function formatMoney(value: number) {
   const sign = value > 0 ? "+" : value < 0 ? "-" : "";
   return `${sign}€${Math.abs(value).toFixed(0)}`;
@@ -75,6 +88,20 @@ function getPlayerDisplayName(player: any) {
   return player?.name ?? player?.display_name ?? player?.full_name ?? player?.nickname ?? player?.email ?? player?.id;
 }
 
+function calculateStrokesReceived(combinedHandicap: any, strokeIndex: any) {
+  const handicap = Number(combinedHandicap);
+  const si = Number(strokeIndex);
+
+  if (!Number.isFinite(handicap) || !Number.isFinite(si) || si < 1) {
+    return 0;
+  }
+
+  const baseStrokes = Math.floor(handicap / 18);
+  const extraStrokes = Math.floor(handicap % 18);
+
+  return baseStrokes + (si <= extraStrokes ? 1 : 0);
+}
+
 function mergeHolesWithDefaults(holes: any[]) {
   return DEFAULT_HOLES.map((defaultHole) => {
     const savedHole = holes.find((hole) => getHoleNumber(hole) === defaultHole.hole_number);
@@ -99,6 +126,8 @@ export default function GameLive() {
   const [holeResults, setHoleResults] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
+  const [grossScores, setGrossScores] = useState<Record<string, string>>({});
+  const [provisionalResult, setProvisionalResult] = useState<ProvisionalResult | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -294,6 +323,61 @@ export default function GameLive() {
     });
   }, [gameTeams, teams, players, gameInvites, holeResults, wallets, purchases, liveData]);
 
+  const scoringRows = useMemo(() => {
+    const strokeIndex = getStrokeIndex(liveData.currentHole);
+
+    return teamRows.map((team) => {
+      const existingGross = team.score !== "-" ? String(team.score) : "";
+      const grossInput = grossScores[team.id] ?? existingGross;
+      const grossNumber = grossInput === "" ? NaN : Number(grossInput);
+      const strokesReceived = calculateStrokesReceived(team.handicap, strokeIndex);
+      const calculatedNet = Number.isFinite(grossNumber) ? grossNumber - strokesReceived : null;
+
+      return {
+        ...team,
+        grossInput,
+        strokesReceived,
+        calculatedNet,
+      };
+    });
+  }, [teamRows, grossScores, liveData.currentHole]);
+
+  useEffect(() => {
+    setGrossScores({});
+    setProvisionalResult(null);
+  }, [liveData.currentHoleNumber]);
+
+  const calculateWinner = () => {
+    const results: CalculatedTeamResult[] = [];
+
+    for (const team of scoringRows) {
+      const grossScore = Number(team.grossInput);
+
+      if (team.grossInput === "" || !Number.isFinite(grossScore) || grossScore <= 0) {
+        setProvisionalResult({ type: "error", message: "Enter a valid gross score for every team before calculating." });
+        return;
+      }
+
+      results.push({
+        teamId: team.id,
+        name: team.name,
+        grossScore,
+        strokesReceived: team.strokesReceived,
+        netScore: grossScore - team.strokesReceived,
+      });
+    }
+
+    const bestNet = Math.min(...results.map((result) => result.netScore));
+    const tiedTeams = results.filter((result) => result.netScore === bestNet);
+
+    if (tiedTeams.length === 1) {
+      setProvisionalResult({ type: "winner", winner: tiedTeams[0], results });
+      return;
+    }
+
+    setProvisionalResult({ type: "tie", tiedTeams, results });
+  };
+
   if (loading) return <div className="p-4">Loading live match...</div>;
   if (error) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
 
@@ -351,7 +435,7 @@ export default function GameLive() {
       </section>
 
       <section className="grid grid-cols-1 gap-3 mb-4">
-        {teamRows.map((team, index) => (
+        {scoringRows.map((team, index) => (
           <div key={team.id} className="card mb-0">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -368,13 +452,26 @@ export default function GameLive() {
 
             <div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs">
               <div className="rounded-xl border border-[var(--gr-border)] p-3">
-                <div className="text-[var(--gr-text-muted)]">Score</div>
-                <div className="text-xl font-black">{team.score}</div>
-                <div className="text-[var(--gr-gold)]">Net {team.net}</div>
+                <label className="block text-[var(--gr-text-muted)]" htmlFor={`gross-${team.id}`}>Gross</label>
+                <input
+                  id={`gross-${team.id}`}
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  value={team.grossInput}
+                  onChange={(event) => {
+                    setGrossScores((current) => ({ ...current, [team.id]: event.target.value }));
+                    setProvisionalResult(null);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-2 py-2 text-center text-xl font-black text-[var(--gr-sand)] outline-none"
+                  placeholder="-"
+                />
+                <div className="mt-1 text-[var(--gr-gold)]">Net {team.calculatedNet ?? "-"}</div>
               </div>
               <div className="rounded-xl border border-[var(--gr-border)] p-3">
-                <div className="text-[var(--gr-text-muted)]">Won</div>
-                <div className="text-xl font-black text-success">{team.holesWon}</div>
+                <div className="text-[var(--gr-text-muted)]">Strokes</div>
+                <div className="text-xl font-black">{team.strokesReceived}</div>
+                <div className="text-[var(--gr-gold)]">HCP {team.handicap}</div>
               </div>
               <div className="rounded-xl border border-[var(--gr-border)] p-3">
                 <div className="text-[var(--gr-text-muted)]">Mulligans</div>
@@ -389,7 +486,7 @@ export default function GameLive() {
             <div className="flex items-center justify-between text-xs text-[var(--gr-text-muted)] mb-3">
               <span>Spent <b className="text-danger">€{Number(team.spent || 0).toFixed(0)}</b></span>
               <span>Won <b className="text-success">€{Number(team.won || 0).toFixed(0)}</b></span>
-              <span>HCP <b className="text-[var(--gr-sand)]">{team.handicap}</b></span>
+              <span>Previous <b className="text-[var(--gr-sand)]">{team.score} / {team.net}</b></span>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -401,19 +498,48 @@ export default function GameLive() {
       </section>
 
       <section className="card">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Actions</div>
-            <div className="font-black">Confirm this hole</div>
+            <div className="font-black">Calculate this hole</div>
           </div>
           <div className="text-right text-xs text-[var(--gr-text-muted)]">
             Economic impact: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span>
           </div>
         </div>
+
+        {provisionalResult && (
+          <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">
+            {provisionalResult.type === "error" && (
+              <div className="font-bold text-danger">{provisionalResult.message}</div>
+            )}
+            {provisionalResult.type === "winner" && (
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div>
+                <div className="text-xl font-black text-success">{provisionalResult.winner.name}</div>
+                <div className="text-[var(--gr-text-muted)]">
+                  Gross {provisionalResult.winner.grossScore} · Strokes {provisionalResult.winner.strokesReceived} · Net {provisionalResult.winner.netScore}
+                </div>
+              </div>
+            )}
+            {provisionalResult.type === "tie" && (
+              <div>
+                <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div>
+                <div className="text-xl font-black text-[var(--gr-warning)]">
+                  {provisionalResult.tiedTeams.map((team) => team.name).join(" vs ")}
+                </div>
+                <div className="text-[var(--gr-text-muted)]">
+                  Same best net: {provisionalResult.tiedTeams[0]?.netScore}. Use Push / Carry in the next step.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
-          <button className="btn btn-secondary" type="button">Mark Winner</button>
-          <button className="btn btn-secondary" type="button">Push / Carry</button>
-          <button className="btn btn-gold col-span-2" type="button">Confirm Result</button>
+          <button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner}>Calculate Winner</button>
+          <button className="btn btn-secondary" type="button" disabled={!provisionalResult || provisionalResult.type !== "winner"}>Confirm Winner</button>
+          <button className="btn btn-secondary" type="button" disabled={!provisionalResult || provisionalResult.type !== "tie"}>Push / Carry</button>
         </div>
       </section>
 
