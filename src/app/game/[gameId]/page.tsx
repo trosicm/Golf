@@ -187,13 +187,12 @@ export default function GameLive() {
   }, [gameId, router]);
 
   const liveData = useMemo(() => {
-    const playedHoleNumbers = new Set(
-      holeResults
-        .map((result) => result.hole_number ?? result.holeNumber ?? result.number)
-        .filter((value) => typeof value === "number"),
-    );
+    const requestedHoleNumber = Number(game?.current_hole ?? 1);
+    const safeHoleNumber = Number.isFinite(requestedHoleNumber)
+      ? Math.min(18, Math.max(1, requestedHoleNumber))
+      : 1;
 
-    const currentHole = holes.find((hole) => !playedHoleNumbers.has(getHoleNumber(hole))) || holes[0] || DEFAULT_HOLES[0];
+    const currentHole = holes.find((hole) => getHoleNumber(hole) === safeHoleNumber) || holes[0] || DEFAULT_HOLES[0];
     const currentHoleNumber = getHoleNumber(currentHole);
     const baseValue = getHoleValue(currentHole);
 
@@ -216,7 +215,7 @@ export default function GameLive() {
     }, 0);
 
     return { currentHole, currentHoleNumber, baseValue, carryIn, purchaseTotal, currentPot, totalPot };
-  }, [holes, holeResults, purchases]);
+  }, [game, holes, purchases]);
 
   const teamRows = useMemo(() => {
     if (gameTeams.length === 0) {
