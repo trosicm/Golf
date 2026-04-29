@@ -18,12 +18,24 @@ function getStrokeIndex(hole: any) {
   return hole.stroke_index ?? hole.strokeIndex ?? hole.si ?? "-";
 }
 
+function getHoleValue(hole: any) {
+  return Number(hole.price ?? hole.value ?? hole.hole_value ?? hole.base_value ?? hole.baseValue ?? 65);
+}
+
 function getGross(result: any) {
   return result?.gross ?? result?.gross_score ?? result?.score ?? "-";
 }
 
-function getNet(result: any) {
-  return result?.net ?? result?.net_score ?? "-";
+function formatMoney(value: number) {
+  return `€${value.toFixed(0)}`;
+}
+
+function getFrontNine(holes: any[]) {
+  return holes.filter((hole) => getHoleNumber(hole) >= 1 && getHoleNumber(hole) <= 9);
+}
+
+function getBackNine(holes: any[]) {
+  return holes.filter((hole) => getHoleNumber(hole) >= 10 && getHoleNumber(hole) <= 18);
 }
 
 export default function ScorecardPage() {
@@ -114,104 +126,163 @@ export default function ScorecardPage() {
   if (loading) return <div className="p-4">Loading...</div>;
   if (error) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
 
-  const teamIdFromGameTeam = (gameTeam: any) => gameTeam.team_id ?? gameTeam.teamId ?? gameTeam.id;
-  const teamName = (teamId: string) => teams.find((team) => team.id === teamId)?.name || teamId;
-  const playerName = (playerId: string) => players.find((player) => player.id === playerId)?.name || playerId;
+  const frontNine = getFrontNine(holes);
+  const backNine = getBackNine(holes);
+  const orderedHoles = [...frontNine, ...backNine];
 
-  const teamPlayers = (teamId: string) => {
-    const gameTeam = gameTeams.find((item) => teamIdFromGameTeam(item) === teamId);
-    if (!gameTeam) return "";
+  const parOut = frontNine.reduce((sum, hole) => sum + Number(hole.par || 0), 0);
+  const parIn = backNine.reduce((sum, hole) => sum + Number(hole.par || 0), 0);
+  const parTotal = parOut + parIn;
 
-    const ids = [
-      gameTeam.player_1_id,
-      gameTeam.player_2_id,
-      gameTeam.player1_id,
-      gameTeam.player2_id,
-      gameTeam.player_a_id,
-      gameTeam.player_b_id,
-    ].filter(Boolean);
+  const valueOut = frontNine.reduce((sum, hole) => sum + getHoleValue(hole), 0);
+  const valueIn = backNine.reduce((sum, hole) => sum + getHoleValue(hole), 0);
+  const valueTotal = valueOut + valueIn;
 
-    return ids.map((id: string) => playerName(id)).join(" & ");
-  };
+  const firstTeamId = gameTeams[0]?.team_id ?? gameTeams[0]?.teamId ?? gameTeams[0]?.id;
 
-  const getResult = (hole: any, teamId: string) => {
+  const getResultForHole = (hole: any) => {
     const holeId = hole.id;
     const holeNumber = getHoleNumber(hole);
 
     return holeResults.find((result) => {
-      const resultTeamId = result.team_id ?? result.teamId;
       const resultHoleId = result.hole_id ?? result.holeId;
       const resultHoleNumber = result.hole_number ?? result.holeNumber ?? result.number;
-      return resultTeamId === teamId && (resultHoleId === holeId || resultHoleNumber === holeNumber);
+      const resultTeamId = result.team_id ?? result.teamId;
+      return (resultHoleId === holeId || resultHoleNumber === holeNumber) && (!firstTeamId || resultTeamId === firstTeamId);
     });
   };
 
-  const getWinner = (hole: any) => {
-    const holeId = hole.id;
-    const holeNumber = getHoleNumber(hole);
-    const result = holeResults.find((item) => {
-      const itemHoleId = item.hole_id ?? item.holeId;
-      const itemHoleNumber = item.hole_number ?? item.holeNumber ?? item.number;
-      return (itemHoleId === holeId || itemHoleNumber === holeNumber) && (item.is_winner || item.winner || item.winner_team_id);
+  const scoreOut = frontNine.reduce((sum, hole) => {
+    const gross = Number(getGross(getResultForHole(hole)));
+    return Number.isFinite(gross) ? sum + gross : sum;
+  }, 0);
+
+  const scoreIn = backNine.reduce((sum, hole) => {
+    const gross = Number(getGross(getResultForHole(hole)));
+    return Number.isFinite(gross) ? sum + gross : sum;
+  }, 0);
+
+  const scoreTotal = scoreOut + scoreIn;
+  const hasScores = holeResults.length > 0;
+  const firstTeamName = teams.find((team) => team.id === firstTeamId)?.name || "Score";
+
+  const renderHoleCells = (rowType: "hole" | "par" | "value" | "score" | "status") => {
+    const cells = orderedHoles.map((hole) => {
+      const holeNumber = getHoleNumber(hole);
+      const result = getResultForHole(hole);
+      const isFrontEnd = holeNumber === 9;
+      const isBackEnd = holeNumber === 18;
+
+      let value: string | number = "-";
+      if (rowType === "hole") value = holeNumber;
+      if (rowType === "par") value = hole.par ?? "-";
+      if (rowType === "value") value = formatMoney(getHoleValue(hole));
+      if (rowType === "score") value = getGross(result);
+      if (rowType === "status") value = result?.status ?? "-";
+
+      const extraCells = [];
+      if (isFrontEnd) {
+        extraCells.push(
+          <td key={`${rowType}-out`} className="px-3 py-3 text-center font-black bg-white/10 text-white border-l border-white/10">
+            {rowType === "hole" && "OUT"}
+            {rowType === "par" && parOut}
+            {rowType === "value" && formatMoney(valueOut)}
+            {rowType === "score" && (hasScores ? scoreOut || "-" : "-")}
+            {rowType === "status" && "-"}
+          </td>,
+        );
+      }
+      if (isBackEnd) {
+        extraCells.push(
+          <td key={`${rowType}-in`} className="px-3 py-3 text-center font-black bg-white/10 text-white border-l border-white/10">
+            {rowType === "hole" && "IN"}
+            {rowType === "par" && parIn}
+            {rowType === "value" && formatMoney(valueIn)}
+            {rowType === "score" && (hasScores ? scoreIn || "-" : "-")}
+            {rowType === "status" && "-"}
+          </td>,
+          <td key={`${rowType}-tot`} className="px-3 py-3 text-center font-black bg-white/15 text-white border-l border-white/10">
+            {rowType === "hole" && "TOT"}
+            {rowType === "par" && parTotal}
+            {rowType === "value" && formatMoney(valueTotal)}
+            {rowType === "score" && (hasScores ? scoreTotal || "-" : "-")}
+            {rowType === "status" && (hasScores ? "" : "E")}
+          </td>,
+        );
+      }
+
+      return [
+        <td
+          key={`${rowType}-${hole.id}`}
+          className={`px-3 py-3 text-center min-w-[58px] ${holeNumber === 1 ? "bg-black text-white font-black" : ""}`}
+        >
+          {value}
+        </td>,
+        ...extraCells,
+      ];
     });
 
-    if (!result) return "";
-    return teamName(result.winner_team_id ?? result.team_id ?? result.teamId);
+    return cells.flat();
   };
 
   return (
-    <div className="p-4 max-w-md mx-auto">
-      <h2 className="text-2xl font-bold mb-4">Scorecard</h2>
-
-      <div className="card mb-4">
-        <div className="text-sm text-[var(--gr-text-muted)] mb-2">Match</div>
-        <div className="font-mono text-xs break-all">{gameId}</div>
-        <div className="text-xs mt-2 text-[var(--gr-text-muted)]">Role: {invite?.role || "player"}</div>
+    <div className="p-4 max-w-6xl mx-auto">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-3xl font-black mb-1">Scorecard</h2>
+          <div className="text-lg font-bold text-white/90">Round 1</div>
+        </div>
+        <div className="text-xs text-[var(--gr-text-muted)] sm:text-right">
+          <div className="font-mono break-all">{gameId}</div>
+          <div>Role: <span className="text-white font-semibold">{invite?.role || "player"}</span></div>
+        </div>
       </div>
 
       {holes.length === 0 ? (
         <div className="card mb-4 text-center text-[var(--gr-text-muted)]">No holes found for this match.</div>
       ) : (
-        <div className="overflow-x-auto mb-4">
-          <table className="min-w-full text-xs border-collapse">
-            <thead>
-              <tr className="bg-[var(--gr-carbon)] text-[var(--gr-sand)]">
-                <th className="px-2 py-1 border">Hole</th>
-                <th className="px-2 py-1 border">Par</th>
-                <th className="px-2 py-1 border">SI</th>
-                <th className="px-2 py-1 border">Team</th>
-                <th className="px-2 py-1 border">Players</th>
-                <th className="px-2 py-1 border">Gross</th>
-                <th className="px-2 py-1 border">Net</th>
-                <th className="px-2 py-1 border">Winner</th>
-              </tr>
-            </thead>
-            <tbody>
-              {holes.flatMap((hole) =>
-                gameTeams.map((gameTeam) => {
-                  const teamId = teamIdFromGameTeam(gameTeam);
-                  const result = getResult(hole, teamId);
+        <div className="card p-0 overflow-hidden bg-white text-black rounded-2xl">
+          <div className="px-5 py-4 border-b border-black/10 flex items-center justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-black/50">Golf Rivals</div>
+              <div className="text-xl font-black">Round 1</div>
+            </div>
+            <div className="text-right text-xs text-black/50">
+              <div>{firstTeamName}</div>
+              <div>Total value: <span className="font-black text-black">{formatMoney(valueTotal)}</span></div>
+            </div>
+          </div>
 
-                  return (
-                    <tr key={`${hole.id}-${teamId}`} className="border-b border-[var(--gr-carbon)]">
-                      <td className="px-2 py-1 border text-center">{getHoleNumber(hole)}</td>
-                      <td className="px-2 py-1 border text-center">{hole.par ?? "-"}</td>
-                      <td className="px-2 py-1 border text-center">{getStrokeIndex(hole)}</td>
-                      <td className="px-2 py-1 border">{teamName(teamId)}</td>
-                      <td className="px-2 py-1 border">{teamPlayers(teamId)}</td>
-                      <td className="px-2 py-1 border text-center">{getGross(result)}</td>
-                      <td className="px-2 py-1 border text-center">{getNet(result)}</td>
-                      <td className="px-2 py-1 border text-center">{getWinner(hole)}</td>
-                    </tr>
-                  );
-                }),
-              )}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1080px] text-sm border-collapse">
+              <tbody>
+                <tr className="border-b border-black/10 text-black/60 uppercase text-xs tracking-wider">
+                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left min-w-[84px]">Hole</th>
+                  {renderHoleCells("hole")}
+                </tr>
+                <tr className="border-b border-black/10 text-black/70">
+                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Par</th>
+                  {renderHoleCells("par")}
+                </tr>
+                <tr className="border-b border-black/10 text-black/70">
+                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Value</th>
+                  {renderHoleCells("value")}
+                </tr>
+                <tr className="border-b border-black/10 font-black text-black">
+                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Score</th>
+                  {renderHoleCells("score")}
+                </tr>
+                <tr className="text-black/80">
+                  <th className="sticky left-0 bg-white z-10 px-3 py-3 text-left uppercase text-xs tracking-wider">Status</th>
+                  {renderHoleCells("status")}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      <div className="flex flex-col gap-2 mt-4">
+      <div className="flex flex-col gap-2 mt-6 sm:flex-row">
         <button className="btn btn-gold w-full" onClick={() => router.push(`/game/${gameId}`)}>
           Back to Match
         </button>
