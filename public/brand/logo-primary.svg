@@ -1,0 +1,13 @@
+<svg width="420" height="110" viewBox="0 0 420 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="420" height="110" rx="24" fill="#0F2D28"/>
+  <g>
+    <circle cx="60" cy="55" r="36" fill="#181B1E"/>
+    <path d="M40 90V30L80 40L60 46" stroke="#C6A15B" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="60" cy="80" r="6" fill="#C6A15B"/>
+    <path d="M60 80Q72 66 92 74" stroke="#5FA36A" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <text x="48" y="72" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="bold" fill="#EFE8DA">G</text>
+    <text x="70" y="72" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="bold" fill="#EFE8DA">R</text>
+  </g>
+  <text x="120" y="70" font-family="Geist, Arial, sans-serif" font-size="48" font-weight="bold" fill="#C6A15B">GOLF RIVALS</text>
+  <text x="120" y="98" font-family="Geist, Arial, sans-serif" font-size="18" font-weight="500" fill="#EFE8DA">EVERY HOLE HAS A PRICE.</text>
+</svg>

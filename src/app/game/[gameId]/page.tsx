@@ -1,274 +1,437 @@
 "use client";
-import { useState } from "react";
-import { createMockGame } from "../../../lib/golfrivals/mockGame";
-import dynamic from "next/dynamic";
-const Bets = dynamic(() => import("./bets"), { ssr: false });
-import {
-  getHandicapStrokes,
-  calculateNetScore,
-  calculateHolePot,
-  getProvisionalHoleResult,
-  buyMulligan,
-  buyReverseMulligan,
-  updateGrossScore,
-  closeHole,
-  recalculateTeamBalances,
-  getBaseContributionPerTeam,
-} from "../../../lib/golfrivals/rules";
 
-const mockGameInit = createMockGame();
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { supabase } from "../../../lib/supabaseClient";
+
+const DEFAULT_HOLES = [
+  { id: "fallback-1", hole_number: 1, par: 5, stroke_index: 4, base_value: 50 },
+  { id: "fallback-2", hole_number: 2, par: 4, stroke_index: 6, base_value: 50 },
+  { id: "fallback-3", hole_number: 3, par: 4, stroke_index: 14, base_value: 45 },
+  { id: "fallback-4", hole_number: 4, par: 4, stroke_index: 12, base_value: 45 },
+  { id: "fallback-5", hole_number: 5, par: 5, stroke_index: 2, base_value: 75 },
+  { id: "fallback-6", hole_number: 6, par: 3, stroke_index: 10, base_value: 60 },
+  { id: "fallback-7", hole_number: 7, par: 4, stroke_index: 16, base_value: 80 },
+  { id: "fallback-8", hole_number: 8, par: 4, stroke_index: 8, base_value: 50 },
+  { id: "fallback-9", hole_number: 9, par: 3, stroke_index: 18, base_value: 60 },
+  { id: "fallback-10", hole_number: 10, par: 4, stroke_index: 9, base_value: 50 },
+  { id: "fallback-11", hole_number: 11, par: 5, stroke_index: 17, base_value: 50 },
+  { id: "fallback-12", hole_number: 12, par: 4, stroke_index: 3, base_value: 65 },
+  { id: "fallback-13", hole_number: 13, par: 3, stroke_index: 15, base_value: 60 },
+  { id: "fallback-14", hole_number: 14, par: 5, stroke_index: 1, base_value: 80 },
+  { id: "fallback-15", hole_number: 15, par: 4, stroke_index: 11, base_value: 45 },
+  { id: "fallback-16", hole_number: 16, par: 4, stroke_index: 7, base_value: 50 },
+  { id: "fallback-17", hole_number: 17, par: 3, stroke_index: 13, base_value: 70 },
+  { id: "fallback-18", hole_number: 18, par: 4, stroke_index: 5, base_value: 65 },
+];
+
+const FALLBACK_TEAMS = [
+  { id: "fallback-team-1", name: "Team 1", players: "Player 1 & Player 2", handicap: 10 },
+  { id: "fallback-team-2", name: "Team 2", players: "Player 3 & Player 4", handicap: 12 },
+  { id: "fallback-team-3", name: "Team 3", players: "Player 5 & Player 6", handicap: 14 },
+  { id: "fallback-team-4", name: "Team 4", players: "Player 7 & Player 8", handicap: 16 },
+];
+
+type QueryResult = {
+  name: string;
+  data: any[];
+  error: any;
+};
+
+function formatMoney(value: number) {
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}€${Math.abs(value).toFixed(0)}`;
+}
+
+function getHoleNumber(hole: any) {
+  return hole.hole_number ?? hole.number ?? hole.hole ?? 0;
+}
+
+function getHoleValue(hole: any) {
+  return Number(hole.price ?? hole.value ?? hole.hole_value ?? hole.base_value ?? hole.baseValue ?? 0);
+}
+
+function getStrokeIndex(hole: any) {
+  return hole.stroke_index ?? hole.strokeIndex ?? hole.si ?? "-";
+}
+
+function getTeamId(gameTeam: any) {
+  return gameTeam.team_id ?? gameTeam.teamId ?? gameTeam.id;
+}
+
+function getPlayerIds(gameTeam: any) {
+  return [
+    gameTeam.player_1_id,
+    gameTeam.player_2_id,
+    gameTeam.player1_id,
+    gameTeam.player2_id,
+    gameTeam.player_a_id,
+    gameTeam.player_b_id,
+    gameTeam.player_id,
+    gameTeam.playerId,
+  ].filter(Boolean);
+}
+
+function getPlayerDisplayName(player: any) {
+  return player?.name ?? player?.display_name ?? player?.full_name ?? player?.nickname ?? player?.email ?? player?.id;
+}
+
+function mergeHolesWithDefaults(holes: any[]) {
+  return DEFAULT_HOLES.map((defaultHole) => {
+    const savedHole = holes.find((hole) => getHoleNumber(hole) === defaultHole.hole_number);
+    return savedHole ? { ...defaultHole, ...savedHole } : defaultHole;
+  });
+}
 
 export default function GameLive() {
-  const [game, setGame] = useState(() => recalculateTeamBalances(mockGameInit));
-  const [error, setError] = useState<string | null>(null);
-  const [reverseTarget, setReverseTarget] = useState<{ buyingTeamId: string; targetTeamId: string } | null>(null);
-  type EventLogEntry = { type: 'mulligan'; teamId: string; amount: number; hole: number } | { type: 'reverse'; teamId: string; targetTeamId: string; amount: number; hole: number };
-  const [eventLog, setEventLog] = useState<EventLogEntry[]>([]);
+  const params = useParams();
+  const router = useRouter();
+  const gameId = Array.isArray(params?.gameId) ? params.gameId[0] : params?.gameId;
 
-  const currentHoleIdx = game.holes.findIndex((h) => h.number === game.currentHole);
-  const currentHole = game.holes[currentHoleIdx];
-  const purchasesForHole = game.purchases.filter((p) => p.holeNumber === currentHole.number);
-  // const baseContribution = getBaseContributionPerTeam(currentHole.baseValue, game.teams.length);
-  const purchaseTotal = purchasesForHole.reduce((sum, p) => sum + p.cost, 0);
-  const currentPot = calculateHolePot(currentHole.baseValue, currentHole.carryIn || 0, purchasesForHole);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [invite, setInvite] = useState<any>(null);
+  const [game, setGame] = useState<any>(null);
+  const [holes, setHoles] = useState<any[]>([]);
+  const [gameTeams, setGameTeams] = useState<any[]>([]);
+  const [teams, setTeams] = useState<any[]>([]);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [gameInvites, setGameInvites] = useState<any[]>([]);
+  const [holeResults, setHoleResults] = useState<any[]>([]);
+  const [wallets, setWallets] = useState<any[]>([]);
+  const [purchases, setPurchases] = useState<any[]>([]);
 
-  // Provisional result
-  const scoresWithNet = currentHole.scores.map((s) => {
-    const team = game.teams.find((t) => t.id === s.teamId)!;
-    const handicapStrokes = getHandicapStrokes(team.handicap, currentHole.strokeIndex);
-    const net = calculateNetScore(s.gross, handicapStrokes);
-    return { ...s, handicapStrokes, net };
-  });
-  const provisional = getProvisionalHoleResult(currentHole, game.teams, scoresWithNet);
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError("");
 
-  // Scoreboard
-  const holesWon: Record<string, number> = {};
-  game.teams.forEach((t) => (holesWon[t.id] = game.holes.filter((h) => h.winnerTeamId === t.id).length));
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        router.push("/auth/login");
+        return;
+      }
 
-  // Handlers
-  const handleGrossChange = (teamId: string, value: string) => {
-    const gross = value === "" ? 0 : Number(value);
-    setGame((g) => recalculateTeamBalances(updateGrossScore(g, currentHole.number, teamId, gross)));
-  };
+      const email = (userData.user.email || "").trim().toLowerCase();
 
-  const handleBuyMulligan = (teamId: string) => {
-    const updated = buyMulligan(game, currentHole.number, teamId);
-    if (updated === game) {
-      setError("Mulligan not allowed (limit 1 per hole, must have mulligans left, hole open)");
-      return;
+      const { data: invites, error: inviteError } = await supabase
+        .from("game_invites")
+        .select("*")
+        .ilike("email", email)
+        .eq("game_id", gameId)
+        .limit(1);
+
+      const inviteRow = invites?.[0];
+      setInvite(inviteRow);
+
+      if (inviteError) {
+        setError(`Could not check invitation: ${inviteError.message}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!inviteRow) {
+        setError(`You are not invited to this match. Email: ${email}`);
+        setLoading(false);
+        return;
+      }
+
+      const [gameRes, holesRes, gameTeamsRes, teamsRes, playersRes, allInvitesRes, holeResultsRes, walletsRes, purchasesRes] = await Promise.all([
+        supabase.from("games").select("*").eq("id", gameId).maybeSingle(),
+        supabase.from("holes").select("*").eq("game_id", gameId),
+        supabase.from("game_teams").select("*").eq("game_id", gameId),
+        supabase.from("teams").select("*"),
+        supabase.from("players").select("*"),
+        supabase.from("game_invites").select("*").eq("game_id", gameId),
+        supabase.from("hole_results").select("*").eq("game_id", gameId),
+        supabase.from("game_player_wallets").select("*").eq("game_id", gameId),
+        supabase.from("purchases").select("*").eq("game_id", gameId),
+      ]);
+
+      const results: QueryResult[] = [
+        { name: "holes", data: holesRes.data || [], error: holesRes.error },
+        { name: "game_teams", data: gameTeamsRes.data || [], error: gameTeamsRes.error },
+        { name: "teams", data: teamsRes.data || [], error: teamsRes.error },
+        { name: "players", data: playersRes.data || [], error: playersRes.error },
+        { name: "game_invites", data: allInvitesRes.data || [], error: allInvitesRes.error },
+        { name: "hole_results", data: holeResultsRes.data || [], error: holeResultsRes.error },
+        { name: "game_player_wallets", data: walletsRes.data || [], error: walletsRes.error },
+        { name: "purchases", data: purchasesRes.data || [], error: purchasesRes.error },
+      ];
+
+      if (gameRes.error) {
+        setError(`games: ${gameRes.error.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const failed = results.find((result) => result.error);
+      if (failed) {
+        setError(`${failed.name}: ${failed.error.message}`);
+        setLoading(false);
+        return;
+      }
+
+      setGame(gameRes.data);
+      setHoles(mergeHolesWithDefaults(holesRes.data || []).sort((a, b) => getHoleNumber(a) - getHoleNumber(b)));
+      setGameTeams(gameTeamsRes.data || []);
+      setTeams(teamsRes.data || []);
+      setPlayers(playersRes.data || []);
+      setGameInvites(allInvitesRes.data || []);
+      setHoleResults(holeResultsRes.data || []);
+      setWallets(walletsRes.data || []);
+      setPurchases(purchasesRes.data || []);
+      setLoading(false);
+    };
+
+    fetchData();
+  }, [gameId, router]);
+
+  const liveData = useMemo(() => {
+    const playedHoleNumbers = new Set(
+      holeResults
+        .map((result) => result.hole_number ?? result.holeNumber ?? result.number)
+        .filter((value) => typeof value === "number"),
+    );
+
+    const currentHole = holes.find((hole) => !playedHoleNumbers.has(getHoleNumber(hole))) || holes[0] || DEFAULT_HOLES[0];
+    const currentHoleNumber = getHoleNumber(currentHole);
+    const baseValue = getHoleValue(currentHole);
+
+    const currentPurchases = purchases.filter((purchase) => {
+      const purchaseHoleNumber = purchase.hole_number ?? purchase.holeNumber ?? purchase.number;
+      const purchaseHoleId = purchase.hole_id ?? purchase.holeId;
+      return purchaseHoleNumber === currentHoleNumber || purchaseHoleId === currentHole.id;
+    });
+
+    const purchaseTotal = currentPurchases.reduce((sum, purchase) => {
+      const value = Number(purchase.cost ?? purchase.amount ?? purchase.value ?? 0);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+
+    const carryIn = Number(currentHole.carry_in ?? currentHole.carryIn ?? 0);
+    const currentPot = baseValue + carryIn + purchaseTotal;
+    const totalPot = holes.reduce((sum, hole) => sum + getHoleValue(hole), 0) + purchases.reduce((sum, purchase) => {
+      const value = Number(purchase.cost ?? purchase.amount ?? purchase.value ?? 0);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+
+    return { currentHole, currentHoleNumber, baseValue, carryIn, purchaseTotal, currentPot, totalPot };
+  }, [holes, holeResults, purchases]);
+
+  const teamRows = useMemo(() => {
+    if (gameTeams.length === 0) {
+      return FALLBACK_TEAMS.map((team, index) => ({
+        ...team,
+        position: index + 1,
+        score: "-",
+        net: "-",
+        holesWon: 0,
+        mulligansLeft: 5,
+        reversesLeft: 2,
+        spent: 0,
+        won: 0,
+        balance: 0,
+      }));
     }
-    setEventLog((log) => [
-      ...log,
-      { type: "mulligan", teamId, amount: 50, hole: currentHole.number },
-    ]);
-    setGame(recalculateTeamBalances(updated));
-    setError(null);
-  };
 
-  const handleBuyReverse = (buyingTeamId: string, targetTeamId: string) => {
-    const updated = buyReverseMulligan(game, currentHole.number, buyingTeamId, targetTeamId);
-    if (updated === game) {
-      setError("Reverse not allowed (limit 1 per hole, must have reverses left, hole open, not already used)");
-      return;
-    }
-    const potBefore = calculateHolePot(currentHole.baseValue, currentHole.carryIn || 0, purchasesForHole);
-    setEventLog((log) => [
-      ...log,
-      { type: "reverse", teamId: buyingTeamId, targetTeamId, amount: potBefore, hole: currentHole.number },
-    ]);
-    setGame(recalculateTeamBalances(updated));
-    setError(null);
-    setReverseTarget(null);
-  };
+    const getTeamName = (teamId: string) => teams.find((team) => team.id === teamId)?.name || teamId;
+    const getPlayerName = (playerId: string) => getPlayerDisplayName(players.find((player) => player.id === playerId)) || playerId;
+    const invitesWithPlayers = [...gameInvites]
+      .filter((gameInvite) => gameInvite.player_id || gameInvite.playerId)
+      .sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
 
-  const handleCloseHole = () => {
-    // Require all gross scores
-    if (currentHole.scores.some((s) => typeof s.gross !== "number" || isNaN(s.gross))) {
-      setError("Enter all gross scores before closing the hole");
-      return;
-    }
-    const updated = closeHole(game, currentHole.number);
-    setGame(recalculateTeamBalances(updated));
-    setEventLog([]);
-    setError(null);
-    // Move to next hole if exists
-    if (currentHoleIdx + 1 < game.holes.length) {
-      setGame((g) => ({ ...g, currentHole: g.holes[currentHoleIdx + 1].number }));
-    }
-  };
+    return gameTeams.map((gameTeam, index) => {
+      const teamId = getTeamId(gameTeam);
+      const directPlayerIds = getPlayerIds(gameTeam);
+      const playersByTeam = players
+        .filter((player) => (player.team_id ?? player.teamId ?? player.current_team_id ?? player.currentTeamId) === teamId)
+        .map((player) => player.id);
+      const invitedPlayerIds = gameInvites
+        .filter((gameInvite) => {
+          const inviteTeamId = gameInvite.team_id ?? gameInvite.teamId;
+          return inviteTeamId === teamId;
+        })
+        .map((gameInvite) => gameInvite.player_id ?? gameInvite.playerId)
+        .filter(Boolean);
+      const fallbackInvitePlayerIds = invitesWithPlayers
+        .slice(index * 2, index * 2 + 2)
+        .map((gameInvite) => gameInvite.player_id ?? gameInvite.playerId)
+        .filter(Boolean);
+      const playerIds = Array.from(new Set([...directPlayerIds, ...playersByTeam, ...invitedPlayerIds, ...fallbackInvitePlayerIds].filter(Boolean)));
+      const teamResults = holeResults.filter((result) => (result.team_id ?? result.teamId) === teamId);
+      const currentResult = teamResults.find((result) => {
+        const resultHoleNumber = result.hole_number ?? result.holeNumber ?? result.number;
+        const resultHoleId = result.hole_id ?? result.holeId;
+        return resultHoleNumber === liveData.currentHoleNumber || resultHoleId === liveData.currentHole.id;
+      });
+      const holesWon = teamResults.filter((result) => result.is_winner || result.winner || result.winner_team_id === teamId).length;
+      const teamPurchases = purchases.filter((purchase) => (purchase.team_id ?? purchase.teamId) === teamId);
+      const spent = teamPurchases.reduce((sum, purchase) => {
+        const value = Number(purchase.cost ?? purchase.amount ?? purchase.value ?? 0);
+        return Number.isFinite(value) ? sum + value : sum;
+      }, 0);
+      const won = holesWon * 0;
+      const walletBalance = wallets
+        .filter((wallet) => {
+          const walletTeamId = wallet.team_id ?? wallet.teamId;
+          const walletPlayerId = wallet.player_id ?? wallet.playerId;
+          return walletTeamId === teamId || playerIds.includes(walletPlayerId);
+        })
+        .reduce((sum, wallet) => {
+          const value = Number(wallet.balance ?? wallet.amount ?? wallet.current_balance ?? wallet.total ?? 0);
+          return Number.isFinite(value) ? sum + value : sum;
+        }, 0);
+      const balance = walletBalance || won - spent;
+      const playerNames = playerIds.map((playerId) => getPlayerName(playerId)).filter(Boolean);
 
-  // UI
+      return {
+        id: teamId,
+        position: index + 1,
+        name: getTeamName(teamId),
+        players: playerNames.length > 0 ? playerNames.join(" & ") : "Players pending",
+        handicap: gameTeam.handicap ?? gameTeam.hcp ?? "-",
+        score: currentResult?.gross ?? currentResult?.gross_score ?? currentResult?.score ?? "-",
+        net: currentResult?.net ?? currentResult?.net_score ?? "-",
+        holesWon,
+        mulligansLeft: gameTeam.mulligans_left ?? gameTeam.mulligansAvailable ?? 5,
+        reversesLeft: gameTeam.reverses_left ?? gameTeam.reverseMulligansAvailable ?? 2,
+        spent,
+        won,
+        balance,
+      };
+    });
+  }, [gameTeams, teams, players, gameInvites, holeResults, wallets, purchases, liveData]);
+
+  if (loading) return <div className="p-4">Loading live match...</div>;
+  if (error) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
+
+  const matchName = game?.name ?? game?.data?.name ?? game?.data?.title ?? "Skins por Hoyos - Villamartin";
+
   return (
-    <div className="p-2 max-w-md mx-auto">
-      {/* Barra superior */}
-      <div className="flex items-center justify-between mb-4 px-2 py-3 rounded-xl" style={{background: 'var(--card-bg)', border: '1px solid var(--card-border)'}}>
+    <div className="p-3 max-w-3xl mx-auto">
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs text-gray-400">HOLE</div>
-          <div className="text-lg font-bold text-white">{currentHole.number} / 18</div>
+          <div className="mb-1 flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[var(--gr-turf)]">
+            <span className="live-dot" /> Live Hole
+          </div>
+          <h1 className="text-2xl font-black text-[var(--gr-sand)]">{matchName}</h1>
+          <div className="text-xs text-[var(--gr-text-muted)] font-mono break-all">{gameId}</div>
         </div>
-        <div className="text-center">
-          <div className="text-xs text-gray-400">POT</div>
-          <div className="text-lg font-bold" style={{color: 'var(--accent-gold)'}}>€{currentPot.toFixed(2)}</div>
-        </div>
-        <div className="text-right">
-          <div className="text-xs text-gray-400">PAR / SI</div>
-          <div className="text-lg font-bold text-white">{currentHole.par} / {currentHole.strokeIndex}</div>
+        <div className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-xs font-bold text-[var(--gr-text-muted)]">
+          {invite?.role || "player"}
         </div>
       </div>
 
-      {/* Info extra */}
-      <div className="flex justify-between text-xs text-gray-400 mb-2 px-1">
-        <span>Base: <span style={{color: 'var(--accent-gold)'}}>€{currentHole.baseValue.toFixed(2)}</span></span>
-        <span>Carry: <span style={{color: 'var(--accent-blue)'}}>€{(currentHole.carryIn || 0).toFixed(2)}</span></span>
-        <span>Compras: <span style={{color: 'var(--accent-green)'}}>€{purchaseTotal.toFixed(2)}</span></span>
-      </div>
-
-      {/* Equipos */}
-      <div className="mb-4 grid grid-cols-1 gap-3">
-        {game.teams.map((team, idx) => {
-          const score = currentHole.scores.find((s) => s.teamId === team.id)!;
-          const handicapStrokes = getHandicapStrokes(team.handicap, currentHole.strokeIndex);
-          const net = calculateNetScore(score.gross, handicapStrokes);
-          const teamClass = `team-badge team-${idx + 1}`;
-          const btnClass = `btn btn-team-${idx + 1}`;
-          const canEdit = true;
-          return (
-            <div key={team.id} className="card flex flex-col gap-1 shadow-lg border border-gray-700">
-              <div className="flex justify-between items-center mb-1">
-                <span className={teamClass}>{team.name}</span>
-                <div className="text-xs text-gray-400">HCP {team.handicap}</div>
-              </div>
-              <div className="text-xs text-gray-300 mb-1">{team.players[0].name} &amp; {team.players[1].name}</div>
-              <div className="flex items-center gap-2 mt-1">
-                <input
-                  type="number"
-                  className="border border-gray-600 rounded-lg px-2 py-1 w-16 text-center bg-transparent text-white font-bold"
-                  value={score.gross}
-                  min={1}
-                  max={20}
-                  onChange={(e) => handleGrossChange(team.id, e.target.value)}
-                  disabled={currentHole.isClosed}
-                />
-                <span className="text-xs text-gray-400">Gross</span>
-                <span className="text-xs ml-2 text-blue-400">HCP: {handicapStrokes}</span>
-                <span className="text-xs ml-2 text-gold-400">Net: {net}</span>
-              </div>
-              <div className="flex gap-2 mt-1 text-xs text-gray-400">
-                <span>Mulligans: <span className="font-bold text-white">{team.mulligansAvailable}</span></span>
-                <span>Reverse: <span className="font-bold text-white">{team.reverseMulligansAvailable}</span></span>
-              </div>
-              <div className="flex gap-2 mt-1 text-xs">
-                <span>Spent: <span className="font-bold text-danger">€{team.moneySpent.toFixed(2)}</span></span>
-                <span>Won: <span className="font-bold text-success">€{team.moneyWon.toFixed(2)}</span></span>
-                <span>Balance: <span className={team.balance && team.balance > 0 ? "text-success" : team.balance && team.balance < 0 ? "text-danger" : "text-white"}>€{team.balance?.toFixed(2)}</span></span>
-              </div>
-              <div className="flex gap-2 mt-2">
-                <button
-                  className={btnClass}
-                  onClick={() => handleBuyMulligan(team.id)}
-                  disabled={currentHole.isClosed}
-                >Mulligan</button>
-                <button
-                  className="btn btn-blue"
-                  onClick={() => setReverseTarget({ buyingTeamId: team.id, targetTeamId: game.teams[0].id })}
-                  disabled={currentHole.isClosed}
-                >Reverse</button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Reverse target selection modal */}
-      {reverseTarget && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-          <div className="card" style={{minWidth: 220}}>
-            <div className="mb-2 font-semibold text-white">Select target team for reverse</div>
-            <div className="flex flex-col gap-2">
-              {game.teams.filter(t => t.id !== reverseTarget.buyingTeamId).map(t => (
-                <button
-                  key={t.id}
-                  className="btn btn-blue"
-                  onClick={() => handleBuyReverse(reverseTarget.buyingTeamId, t.id)}
-                >{t.name}</button>
-              ))}
-            </div>
-            <button className="mt-4 text-xs underline text-gray-400" onClick={() => setReverseTarget(null)}>Cancel</button>
+      <section className="card mb-4 p-0 overflow-hidden">
+        <div className="grid grid-cols-3 border-b border-[var(--gr-border)]">
+          <div className="p-4">
+            <div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Hole</div>
+            <div className="text-3xl font-black">{liveData.currentHoleNumber}<span className="text-base text-[var(--gr-text-muted)]"> / 18</span></div>
+          </div>
+          <div className="p-4 text-center border-x border-[var(--gr-border)]">
+            <div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Current Pot</div>
+            <div className="text-3xl font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</div>
+          </div>
+          <div className="p-4 text-right">
+            <div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Par / SI</div>
+            <div className="text-3xl font-black">{liveData.currentHole.par ?? "-"} / {getStrokeIndex(liveData.currentHole)}</div>
           </div>
         </div>
-      )}
 
-      {/* Provisional result */}
-      <div className="my-4 card bg-opacity-80" style={{background: 'var(--card-bg)'}}>
-        <div className="font-semibold text-white mb-1">Provisional result:</div>
-        {currentHole.scores.some((s) => typeof s.gross !== "number" || isNaN(s.gross)) ? (
-          <div className="text-xs text-gray-400">Enter all scores</div>
-        ) : provisional.isTie ? (
-          <div className="text-xs text-gold-400">Tie: {provisional.netScores.filter(ns => ns.net === Math.min(...provisional.netScores.map(n => n.net))).map(ns => game.teams.find(t => t.id === ns.teamId)?.name).join(", ")}</div>
-        ) : (
-          <div className="text-xs text-success">Winner: {game.teams.find(t => t.id === provisional.winnerTeamId)?.name}</div>
-        )}
+        <div className="grid grid-cols-4 gap-2 p-4 text-center text-xs sm:text-sm">
+          <div>
+            <div className="text-[var(--gr-text-muted)]">Hole Value</div>
+            <div className="font-black text-[var(--gr-gold)]">€{liveData.baseValue.toFixed(0)}</div>
+          </div>
+          <div>
+            <div className="text-[var(--gr-text-muted)]">Carried Over</div>
+            <div className="font-black text-[var(--gr-warning)]">€{liveData.carryIn.toFixed(0)}</div>
+          </div>
+          <div>
+            <div className="text-[var(--gr-text-muted)]">Added</div>
+            <div className="font-black text-[var(--gr-turf)]">€{liveData.purchaseTotal.toFixed(0)}</div>
+          </div>
+          <div>
+            <div className="text-[var(--gr-text-muted)]">Total Pot</div>
+            <div className="font-black text-[var(--gr-gold)]">€{liveData.totalPot.toFixed(0)}</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-3 mb-4">
+        {teamRows.map((team, index) => (
+          <div key={team.id} className="card mb-0">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <span className={`team-badge team-${(index % 4) + 1}`}>{team.name}</span>
+                <div className="mt-2 text-sm text-[var(--gr-text-muted)]">{team.players}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs uppercase text-[var(--gr-text-muted)]">Balance</div>
+                <div className={Number(team.balance) < 0 ? "text-2xl font-black text-danger" : "text-2xl font-black text-success"}>
+                  {formatMoney(Number(team.balance || 0))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs">
+              <div className="rounded-xl border border-[var(--gr-border)] p-3">
+                <div className="text-[var(--gr-text-muted)]">Score</div>
+                <div className="text-xl font-black">{team.score}</div>
+                <div className="text-[var(--gr-gold)]">Net {team.net}</div>
+              </div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3">
+                <div className="text-[var(--gr-text-muted)]">Won</div>
+                <div className="text-xl font-black text-success">{team.holesWon}</div>
+              </div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3">
+                <div className="text-[var(--gr-text-muted)]">Mulligans</div>
+                <div className="text-xl font-black">{team.mulligansLeft}</div>
+              </div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3">
+                <div className="text-[var(--gr-text-muted)]">Reverses</div>
+                <div className="text-xl font-black">{team.reversesLeft}</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-[var(--gr-text-muted)] mb-3">
+              <span>Spent <b className="text-danger">€{Number(team.spent || 0).toFixed(0)}</b></span>
+              <span>Won <b className="text-success">€{Number(team.won || 0).toFixed(0)}</b></span>
+              <span>HCP <b className="text-[var(--gr-sand)]">{team.handicap}</b></span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button className="btn btn-gold" type="button">Buy Mulligan</button>
+              <button className="btn btn-secondary" type="button">Use Reverse</button>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <section className="card">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Actions</div>
+            <div className="font-black">Confirm this hole</div>
+          </div>
+          <div className="text-right text-xs text-[var(--gr-text-muted)]">
+            Economic impact: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button className="btn btn-secondary" type="button">Mark Winner</button>
+          <button className="btn btn-secondary" type="button">Push / Carry</button>
+          <button className="btn btn-gold col-span-2" type="button">Confirm Result</button>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-2 gap-2 mb-6">
+        <Link href={`/game/${gameId}/scorecard`} className="btn btn-secondary">Scorecard</Link>
+        <Link href={`/game/${gameId}/leaderboard`} className="btn btn-secondary">Leaderboard</Link>
+        <Link href={`/game/${gameId}/summary`} className="btn btn-gold col-span-2">View Final Summary</Link>
       </div>
-
-      {/* Event log tipo chat */}
-      <div className="my-2 card bg-opacity-80" style={{background: 'var(--card-bg)'}}>
-        <div className="font-semibold text-xs mb-1 text-white">Event log</div>
-        <ul className="text-xs flex flex-col gap-1">
-          {eventLog.map((e, i) => (
-            <li key={i} className="rounded px-2 py-1" style={{background: 'rgba(29,185,84,0.08)'}}>
-              {e.type === "mulligan" && (
-                <span className="text-green-400">{game.teams.find(t => t.id === e.teamId)?.name} bought Mulligan <span className="text-white">(€{e.amount})</span></span>
-              )}
-              {e.type === "reverse" && (
-                <span className="text-blue-400">{game.teams.find(t => t.id === e.teamId)?.name} bought Reverse on {game.teams.find(t => t.id === e.targetTeamId)?.name} <span className="text-white">(€{e.amount})</span></span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Close hole button */}
-      <button
-        className="w-full btn btn-gold text-lg font-bold mb-4"
-        onClick={handleCloseHole}
-        disabled={currentHole.isClosed}
-      >Close Hole</button>
-
-      {/* Error message */}
-      {error && <div className="text-danger text-xs mb-2">{error}</div>}
-
-      {/* Extra Bets */}
-      <Bets />
-
-      {/* Scoreboard */}
-      <div className="my-4 card bg-opacity-80" style={{background: 'var(--card-bg)'}}>
-        <div className="font-semibold mb-1 text-white">Scoreboard</div>
-        <table className="w-full text-xs scoreboard-table">
-          <thead>
-            <tr>
-              <th className="text-left">Team</th>
-              <th>Holes</th>
-              <th>Spent</th>
-              <th>Won</th>
-              <th>Balance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {game.teams.map((t, idx) => (
-              <tr key={t.id}>
-                <td className={`font-bold team-badge team-${idx + 1}`}>{t.name}</td>
-                <td className="text-center">{holesWon[t.id]}</td>
-                <td className="text-center text-danger">€{t.moneySpent.toFixed(2)}</td>
-                <td className="text-center text-success">€{t.moneyWon.toFixed(2)}</td>
-                <td className={t.balance && t.balance > 0 ? 'text-success text-center' : t.balance && t.balance < 0 ? 'text-danger text-center' : 'text-white text-center'}>€{t.balance?.toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* View summary button */}
-      <a href={`/game/${game.id}/summary`} className="block w-full btn btn-green text-lg font-bold mb-4">View Final Summary</a>
     </div>
   );
 }

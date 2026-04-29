@@ -1,94 +1,327 @@
 @import "tailwindcss";
 
-/* --- PREMIUM BRAND PALETTE --- */
+/* --- GOLF RIVALS PREMIUM BRAND SYSTEM --- */
 :root {
-  --background: linear-gradient(135deg, #181c1f 0%, #23243a 100%);
-  --foreground: #fff;
-  --brand-font: 'Geist', 'Inter', Arial, Helvetica, sans-serif;
-  --card-bg: rgba(28,30,40,0.98);
-  --card-border: #353a4a;
-  --shadow: 0 4px 32px 0 rgba(0,0,0,0.28);
-  --danger: #ff3860;
-  --success: #2de282;
-  /* Team colors */
-  --team-1: #1db954;
-  --team-2: #3b82f6;
-  --team-3: #ffd700;
-  --team-4: #a259ff;
-  --accent-gold: #ffd700;
-  --accent-blue: #3b82f6;
+  /* Official palette */
+  --gr-midnight: #0F2D28;
+  --gr-carbon: #181B1E;
+  --gr-sand: #EFE8DA;
+  --gr-gold: #C6A15B;
+  --gr-turf: #5FA36A;
+  --gr-danger: #C95C4A;
+  --gr-warning: #D9A441;
+  --gr-border: #2E3A36;
+
+  /* Functional tokens */
+  --gr-bg: linear-gradient(135deg, var(--gr-carbon) 0%, #121a19 44%, var(--gr-midnight) 100%);
+  --gr-surface: rgba(24, 27, 30, 0.94);
+  --gr-surface-soft: rgba(15, 45, 40, 0.72);
+  --gr-surface-strong: rgba(13, 16, 17, 0.96);
+  --gr-text: var(--gr-sand);
+  --gr-text-muted: rgba(239, 232, 218, 0.68);
+  --gr-primary: var(--gr-gold);
+  --gr-success: var(--gr-turf);
+  --gr-error: var(--gr-danger);
+  --gr-carry: var(--gr-warning);
+
+  /* Legacy compatibility tokens used by current screens */
+  --background: var(--gr-bg);
+  --foreground: var(--gr-text);
+  --brand-font: "Geist", "Inter", Arial, Helvetica, sans-serif;
+  --card-bg: var(--gr-surface);
+  --card-border: var(--gr-border);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  --danger: var(--gr-danger);
+  --success: var(--gr-turf);
+  --accent-gold: var(--gr-gold);
+  --accent-blue: var(--gr-turf);
+
+  /* Team accents, premium and non-neon */
+  --team-1: var(--gr-turf);
+  --team-2: var(--gr-gold);
+  --team-3: var(--gr-warning);
+  --team-4: var(--gr-danger);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: linear-gradient(135deg, #101214 0%, #23243a 100%);
-    --foreground: #fff;
-    --card-bg: rgba(18,20,30,0.98);
-    --card-border: #23272b;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--gr-carbon);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--brand-font);
   min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(198, 161, 91, 0.11), transparent 34rem),
+    radial-gradient(circle at bottom right, rgba(95, 163, 106, 0.13), transparent 30rem),
+    var(--gr-bg);
+  color: var(--gr-text);
+  font-family: var(--brand-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: 0.01em;
 }
 
+button,
+a,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+textarea {
+  min-height: 44px;
+  border: 1px solid var(--gr-border);
+  border-radius: 0.9rem;
+  background: rgba(15, 45, 40, 0.42);
+  color: var(--gr-text);
+  padding: 0.75rem 0.95rem;
+  outline: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--gr-text-muted);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--gr-gold);
+  box-shadow: 0 0 0 3px rgba(198, 161, 91, 0.18);
+}
+
+/* --- Core layout primitives --- */
 .card {
-  background: var(--card-bg);
-  border: 1.5px solid var(--card-border);
+  background:
+    linear-gradient(180deg, rgba(239, 232, 218, 0.035), transparent 58%),
+    var(--gr-surface);
+  border: 1px solid var(--gr-border);
   border-radius: 1.25rem;
   box-shadow: var(--shadow);
-  padding: 1.5rem;
+  padding: 1.35rem;
   margin-bottom: 1.25rem;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(10px);
 }
 
 .btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border: 1px solid transparent;
   border-radius: 9999px;
-  font-weight: 700;
-  padding: 0.6rem 1.7rem;
-  font-size: 1.08rem;
-  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+  font-weight: 800;
+  padding: 0.72rem 1.35rem;
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform 0.16s ease, background 0.16s ease, color 0.16s ease, border-color 0.16s ease, opacity 0.16s ease;
   cursor: pointer;
-  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  text-decoration: none;
 }
-.btn-team-1 { background: var(--team-1); color: #fff; }
-.btn-team-2 { background: var(--team-2); color: #fff; }
-.btn-team-3 { background: var(--team-3); color: #181c1f; }
-.btn-team-4 { background: var(--team-4); color: #fff; }
-.btn-gold { background: var(--accent-gold); color: #181c1f; }
-.btn-blue { background: var(--accent-blue); color: #fff; }
-.btn-danger { background: var(--danger); color: #fff; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.team-badge { display: inline-block; font-weight: 700; border-radius: 0.7em; padding: 0.2em 0.9em; font-size: 1.1em; letter-spacing: 0.02em; }
-.team-1 { background: linear-gradient(90deg, #1db954 60%, #1a8f4c 100%); color: #fff; }
-.team-2 { background: linear-gradient(90deg, #3b82f6 60%, #1e3a8a 100%); color: #fff; }
-.team-3 { background: linear-gradient(90deg, #ffd700 60%, #bfa100 100%); color: #181c1f; }
-.team-4 { background: linear-gradient(90deg, #a259ff 60%, #5f2b96 100%); color: #fff; }
-.scoreboard-table th, .scoreboard-table td {
-  padding: 0.7rem 0.35rem;
-  font-size: 1.05em;
+
+.btn:active {
+  transform: translateY(1px) scale(0.99);
 }
-/* --- BRAND MANUAL BASE --- */
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.44;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-gold,
+.btn-primary {
+  background: var(--gr-gold);
+  color: var(--gr-carbon);
+  border-color: rgba(198, 161, 91, 0.6);
+}
+
+.btn-gold:hover,
+.btn-primary:hover {
+  background: #D4B16A;
+}
+
+.btn-blue,
+.btn-green,
+.btn-secondary {
+  background: rgba(15, 45, 40, 0.72);
+  color: var(--gr-sand);
+  border-color: var(--gr-border);
+}
+
+.btn-blue:hover,
+.btn-green:hover,
+.btn-secondary:hover {
+  border-color: var(--gr-gold);
+  background: rgba(15, 45, 40, 0.92);
+}
+
+.btn-danger {
+  background: rgba(201, 92, 74, 0.16);
+  color: var(--gr-sand);
+  border-color: var(--gr-danger);
+}
+
+.btn-danger:hover {
+  background: var(--gr-danger);
+  color: var(--gr-sand);
+}
+
+.btn-team-1,
+.btn-team-2,
+.btn-team-3,
+.btn-team-4 {
+  color: var(--gr-carbon);
+  border-color: transparent;
+}
+
+.btn-team-1 { background: var(--gr-turf); }
+.btn-team-2 { background: var(--gr-gold); }
+.btn-team-3 { background: var(--gr-warning); }
+.btn-team-4 { background: var(--gr-danger); color: var(--gr-sand); }
+
+/* --- Badges and status helpers --- */
+.team-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0.28em 0.85em;
+  font-size: 0.88rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(239, 232, 218, 0.12);
+}
+
+.team-1 {
+  background: rgba(95, 163, 106, 0.18);
+  color: var(--gr-sand);
+  border-color: rgba(95, 163, 106, 0.5);
+}
+
+.team-2 {
+  background: rgba(198, 161, 91, 0.18);
+  color: var(--gr-sand);
+  border-color: rgba(198, 161, 91, 0.52);
+}
+
+.team-3 {
+  background: rgba(217, 164, 65, 0.18);
+  color: var(--gr-sand);
+  border-color: rgba(217, 164, 65, 0.5);
+}
+
+.team-4 {
+  background: rgba(201, 92, 74, 0.18);
+  color: var(--gr-sand);
+  border-color: rgba(201, 92, 74, 0.5);
+}
+
+.scoreboard-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.scoreboard-table th,
+.scoreboard-table td {
+  padding: 0.75rem 0.45rem;
+  font-size: 0.95rem;
+  border-bottom: 1px solid rgba(46, 58, 54, 0.62);
+}
+
+/* --- Compatibility text colors used across current app --- */
+.text-danger {
+  color: var(--gr-danger) !important;
+}
+
+.text-success {
+  color: var(--gr-turf) !important;
+}
+
+.text-gold-400,
+.text-yellow-400 {
+  color: var(--gr-gold) !important;
+}
+
+.text-blue-400 {
+  color: var(--gr-turf) !important;
+}
+
+.bg-gray-900 {
+  background-color: rgba(15, 45, 40, 0.58) !important;
+}
+
+.border-gray-600,
+.border-gray-700 {
+  border-color: var(--gr-border) !important;
+}
+
+.text-gray-300,
+.text-gray-400 {
+  color: var(--gr-text-muted) !important;
+}
+
+/* --- Live/status utilities --- */
+.live-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: var(--gr-turf);
+  box-shadow: 0 0 0 4px rgba(95, 163, 106, 0.14), 0 0 18px rgba(95, 163, 106, 0.42);
+}
+
+.pot-value,
+.money-value {
+  color: var(--gr-gold);
+  font-weight: 900;
+}
+
+/* --- Brand manual legacy block --- */
 .brand-logo {
   display: block;
   width: 180px;
   margin: 0 auto 2rem auto;
-  filter: drop-shadow(0 2px 12px #0008);
+  filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.34));
 }
+
 .brand-manual {
-  background: rgba(24,28,31,0.98);
+  background: var(--gr-surface);
+  border: 1px solid var(--gr-border);
   border-radius: 1.5rem;
   padding: 2.5rem 2rem;
-  color: #fff;
-  max-width: 600px;
+  color: var(--gr-sand);
+  max-width: 720px;
   margin: 2rem auto;
-  box-shadow: 0 4px 32px 0 rgba(0,0,0,0.28);
+  box-shadow: var(--shadow);
   font-family: var(--brand-font);
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 1rem;
+    border-radius: 1.05rem;
+  }
+
+  .btn {
+    width: 100%;
+    min-height: 48px;
+    font-size: 1rem;
+  }
 }

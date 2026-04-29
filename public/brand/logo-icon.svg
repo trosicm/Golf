@@ -1,0 +1,8 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="32" cy="32" r="30" fill="#0F2D28"/>
+  <path d="M20 50V14L44 20L32 24" stroke="#C6A15B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="48" r="4" fill="#C6A15B"/>
+  <path d="M32 48Q38 40 48 44" stroke="#5FA36A" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <text x="22" y="38" font-family="Geist, Arial, sans-serif" font-size="18" font-weight="bold" fill="#EFE8DA">G</text>
+  <text x="36" y="38" font-family="Geist, Arial, sans-serif" font-size="18" font-weight="bold" fill="#EFE8DA">R</text>
+</svg>

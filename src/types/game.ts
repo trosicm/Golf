@@ -27,8 +27,9 @@ export type ExtraBet = {
   teamsInvolved: string[]; // team ids
   holeNumber?: number; // for bets on a specific hole
   amount: number;
-  status: 'open' | 'closed';
+  status: 'open' | 'pending-confirmation' | 'closed';
   winnerTeamId?: string;
+  confirmations?: { teamId: string; confirmed: boolean }[];
 };
 
 export type Hole = {
