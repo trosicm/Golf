@@ -17,9 +17,10 @@ const n = (value: any, fallback = 0) => {
 };
 const money = (value: number) => `${value > 0 ? "+" : value < 0 ? "-" : ""}€${Math.abs(value).toFixed(0)}`;
 const teamIdOf = (row: any) => row?.team_id ?? row?.teamId ?? row?.id;
-const resultHoleNo = (row: any) => row?.hole_number ?? row?.holeNumber ?? row?.number;
+const resultHoleNo = (row: any) => row?.hole_number ?? row?.holeNumber ?? row?.number ?? row?.hole_id ?? row?.holeId;
 const purchaseAmount = (row: any) => n(row?.amount ?? row?.cost ?? row?.value ?? row?.price);
 const potValue = (row: any) => n(row?.pot_value ?? row?.pot ?? row?.value ?? row?.amount);
+const isWinningResult = (row: any, teamId: string) => row?.is_winner === true || row?.winner === true || row?.winner_team_id === teamId;
 function getTeamPlayerIds(team: any) { return [team?.player_1_id, team?.player_2_id, team?.player1_id, team?.player2_id, team?.player_a_id, team?.player_b_id].filter(Boolean); }
 function playerName(player: any) { return player?.name ?? player?.display_name ?? player?.full_name ?? player?.nickname ?? player?.email ?? player?.id; }
 
@@ -35,7 +36,6 @@ export default function LeaderboardPage() {
   const [teams, setTeams] = useState<any[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
   const [holeResults, setHoleResults] = useState<any[]>([]);
-  const [wallets, setWallets] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
 
   useEffect(() => {
@@ -63,17 +63,16 @@ export default function LeaderboardPage() {
         return;
       }
 
-      const [gameTeamsRes, teamsRes, playersRes, resultsRes, walletsRes, purchasesRes] = await Promise.all([
+      const [gameTeamsRes, teamsRes, playersRes, resultsRes, purchasesRes] = await Promise.all([
         supabase.from("game_teams").select("*").eq("game_id", gameId),
         supabase.from("teams").select("*"),
         supabase.from("players").select("*"),
         supabase.from("hole_results").select("*").eq("game_id", gameId),
-        supabase.from("game_player_wallets").select("*").eq("game_id", gameId),
         supabase.from("purchases").select("*").eq("game_id", gameId),
       ]);
 
       const failed = [
-        ["game_teams", gameTeamsRes], ["teams", teamsRes], ["players", playersRes], ["hole_results", resultsRes], ["game_player_wallets", walletsRes], ["purchases", purchasesRes],
+        ["game_teams", gameTeamsRes], ["teams", teamsRes], ["players", playersRes], ["hole_results", resultsRes], ["purchases", purchasesRes],
       ].find(([, res]: any) => res.error);
       if (failed) {
         setError(`${failed[0]}: ${(failed[1] as any).error.message}`);
@@ -85,7 +84,6 @@ export default function LeaderboardPage() {
       setTeams(teamsRes.data || []);
       setPlayers(playersRes.data || []);
       setHoleResults(resultsRes.data || []);
-      setWallets(walletsRes.data || []);
       setPurchases(purchasesRes.data || []);
       setLoading(false);
     };
@@ -102,11 +100,10 @@ export default function LeaderboardPage() {
       const playerNames = playerIds.map((id) => playerName(players.find((player) => player.id === id))).filter(Boolean).join(" & ");
       const results = holeResults.filter((result) => teamIdOf(result) === teamId);
       const holesPlayed = new Set(results.map(resultHoleNo).filter(Boolean)).size;
-      const winnerResults = results.filter((result) => result.is_winner || result.winner || result.winner_team_id === teamId);
+      const winnerResults = results.filter((result) => isWinningResult(result, teamId));
       const wonFromResults = winnerResults.reduce((sum, result) => sum + potValue(result), 0);
       const spent = purchases.filter((purchase) => teamIdOf(purchase) === teamId).reduce((sum, purchase) => sum + purchaseAmount(purchase), 0);
-      const walletBalance = wallets.filter((wallet) => teamIdOf(wallet) === teamId || playerIds.includes(wallet.player_id ?? wallet.playerId)).reduce((sum, wallet) => sum + n(wallet.balance ?? wallet.amount ?? wallet.current_balance ?? wallet.total), 0);
-      const balance = walletBalance || wonFromResults - spent;
+      const balance = wonFromResults - spent;
       return {
         id: teamId,
         position: 0,
@@ -122,9 +119,9 @@ export default function LeaderboardPage() {
     });
 
     return calculated.sort((a, b) => b.balance - a.balance || b.holesWon - a.holesWon).map((row, index) => ({ ...row, position: index + 1 }));
-  }, [gameTeams, teams, players, holeResults, wallets, purchases]);
+  }, [gameTeams, teams, players, holeResults, purchases]);
 
-  const positivePot = rows.reduce((sum, row) => sum + Math.max(n(row.balance), 0), 0);
+  const positivePot = rows.reduce((sum, row) => sum + Math.max(n(row.won), 0), 0);
   const totalSpent = rows.reduce((sum, row) => sum + n(row.spent), 0);
   const leaders = rows.slice(0, 4);
 
@@ -167,33 +164,13 @@ export default function LeaderboardPage() {
         <div className="border-b border-black/10 px-5 py-4"><div className="text-xs uppercase tracking-[0.18em] text-black/50">Golf Rivals</div><div className="text-2xl font-black">Match Leaderboard</div></div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b-2 border-black text-left text-xs uppercase tracking-wider text-black/55">
-                <th className="px-3 py-3">Pos</th><th className="px-3 py-3">Team</th><th className="px-3 py-3 text-center">Thru</th><th className="px-3 py-3 text-center">Holes Won</th><th className="px-3 py-3 text-center">Won</th><th className="px-3 py-3 text-center">Spent</th><th className="px-3 py-3 text-center">Balance</th><th className="px-3 py-3 text-center">Move</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-b border-black/10 hover:bg-black/[0.03]">
-                  <td className="px-3 py-4 font-black">{row.position}</td>
-                  <td className="px-3 py-4"><div className="font-black text-black">{row.name}</div><div className="text-xs text-black/50">{row.players}</div></td>
-                  <td className="px-3 py-4 text-center font-bold">{row.thru}</td>
-                  <td className="px-3 py-4 text-center font-bold">{row.holesWon}</td>
-                  <td className="px-3 py-4 text-center font-bold text-[var(--gr-turf)]">{money(n(row.won))}</td>
-                  <td className="px-3 py-4 text-center font-bold text-[var(--gr-danger)]">{money(n(row.spent))}</td>
-                  <td className={`px-3 py-4 text-center font-black ${n(row.balance) < 0 ? "text-[var(--gr-danger)]" : "text-[var(--gr-turf)]"}`}>{money(n(row.balance))}</td>
-                  <td className={`px-3 py-4 text-center font-black ${row.movement === "+1" ? "text-[var(--gr-turf)]" : row.movement === "-1" ? "text-[var(--gr-danger)]" : "text-black/50"}`}>{row.movement}</td>
-                </tr>
-              ))}
-            </tbody>
+            <thead><tr className="border-b-2 border-black text-left text-xs uppercase tracking-wider text-black/55"><th className="px-3 py-3">Pos</th><th className="px-3 py-3">Team</th><th className="px-3 py-3 text-center">Thru</th><th className="px-3 py-3 text-center">Holes Won</th><th className="px-3 py-3 text-center">Won</th><th className="px-3 py-3 text-center">Spent</th><th className="px-3 py-3 text-center">Balance</th><th className="px-3 py-3 text-center">Move</th></tr></thead>
+            <tbody>{rows.map((row) => (<tr key={row.id} className="border-b border-black/10 hover:bg-black/[0.03]"><td className="px-3 py-4 font-black">{row.position}</td><td className="px-3 py-4"><div className="font-black text-black">{row.name}</div><div className="text-xs text-black/50">{row.players}</div></td><td className="px-3 py-4 text-center font-bold">{row.thru}</td><td className="px-3 py-4 text-center font-bold">{row.holesWon}</td><td className="px-3 py-4 text-center font-bold text-[var(--gr-turf)]">{money(n(row.won))}</td><td className="px-3 py-4 text-center font-bold text-[var(--gr-danger)]">{money(n(row.spent))}</td><td className={`px-3 py-4 text-center font-black ${n(row.balance) < 0 ? "text-[var(--gr-danger)]" : "text-[var(--gr-turf)]"}`}>{money(n(row.balance))}</td><td className={`px-3 py-4 text-center font-black ${row.movement === "+1" ? "text-[var(--gr-turf)]" : row.movement === "-1" ? "text-[var(--gr-danger)]" : "text-black/50"}`}>{row.movement}</td></tr>))}</tbody>
           </table>
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 mt-6 sm:flex-row">
-        <button className="btn btn-gold w-full" onClick={() => router.push(`/game/${gameId}`)}>Back to Match</button>
-        <button className="btn btn-secondary w-full" onClick={() => router.push(`/game/${gameId}/scorecard`)}>Scorecard</button>
-      </div>
+      <div className="flex flex-col gap-2 mt-6 sm:flex-row"><button className="btn btn-gold w-full" onClick={() => router.push(`/game/${gameId}`)}>Back to Match</button><button className="btn btn-secondary w-full" onClick={() => router.push(`/game/${gameId}/scorecard`)}>Scorecard</button></div>
     </div>
   );
 }
