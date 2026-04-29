@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { createMockGame } from "../../../lib/golfrivals/mockGame";
 import dynamic from "next/dynamic";
 const Bets = dynamic(() => import("./bets"), { ssr: false });
@@ -13,12 +14,13 @@ import {
   updateGrossScore,
   closeHole,
   recalculateTeamBalances,
-  getBaseContributionPerTeam,
 } from "../../../lib/golfrivals/rules";
 
 const mockGameInit = createMockGame();
 
 export default function GameLive() {
+  const params = useParams();
+  const routeGameId = Array.isArray(params?.gameId) ? params.gameId[0] : params?.gameId;
   const [game, setGame] = useState(() => recalculateTeamBalances(mockGameInit));
   const [error, setError] = useState<string | null>(null);
   const [reverseTarget, setReverseTarget] = useState<{ buyingTeamId: string; targetTeamId: string } | null>(null);
@@ -28,11 +30,9 @@ export default function GameLive() {
   const currentHoleIdx = game.holes.findIndex((h) => h.number === game.currentHole);
   const currentHole = game.holes[currentHoleIdx];
   const purchasesForHole = game.purchases.filter((p) => p.holeNumber === currentHole.number);
-  // const baseContribution = getBaseContributionPerTeam(currentHole.baseValue, game.teams.length);
   const purchaseTotal = purchasesForHole.reduce((sum, p) => sum + p.cost, 0);
   const currentPot = calculateHolePot(currentHole.baseValue, currentHole.carryIn || 0, purchasesForHole);
 
-  // Provisional result
   const scoresWithNet = currentHole.scores.map((s) => {
     const team = game.teams.find((t) => t.id === s.teamId)!;
     const handicapStrokes = getHandicapStrokes(team.handicap, currentHole.strokeIndex);
@@ -41,11 +41,9 @@ export default function GameLive() {
   });
   const provisional = getProvisionalHoleResult(currentHole, game.teams, scoresWithNet);
 
-  // Scoreboard
   const holesWon: Record<string, number> = {};
   game.teams.forEach((t) => (holesWon[t.id] = game.holes.filter((h) => h.winnerTeamId === t.id).length));
 
-  // Handlers
   const handleGrossChange = (teamId: string, value: string) => {
     const gross = value === "" ? 0 : Number(value);
     setGame((g) => recalculateTeamBalances(updateGrossScore(g, currentHole.number, teamId, gross)));
@@ -82,7 +80,6 @@ export default function GameLive() {
   };
 
   const handleCloseHole = () => {
-    // Require all gross scores
     if (currentHole.scores.some((s) => typeof s.gross !== "number" || isNaN(s.gross))) {
       setError("Enter all gross scores before closing the hole");
       return;
@@ -91,16 +88,13 @@ export default function GameLive() {
     setGame(recalculateTeamBalances(updated));
     setEventLog([]);
     setError(null);
-    // Move to next hole if exists
     if (currentHoleIdx + 1 < game.holes.length) {
       setGame((g) => ({ ...g, currentHole: g.holes[currentHoleIdx + 1].number }));
     }
   };
 
-  // UI
   return (
     <div className="p-2 max-w-md mx-auto">
-      {/* Barra superior */}
       <div className="flex items-center justify-between mb-4 px-2 py-3 rounded-xl" style={{background: 'var(--card-bg)', border: '1px solid var(--card-border)'}}>
         <div>
           <div className="text-xs text-gray-400">HOLE</div>
@@ -116,14 +110,12 @@ export default function GameLive() {
         </div>
       </div>
 
-      {/* Info extra */}
       <div className="flex justify-between text-xs text-gray-400 mb-2 px-1">
         <span>Base: <span style={{color: 'var(--accent-gold)'}}>€{currentHole.baseValue.toFixed(2)}</span></span>
         <span>Carry: <span style={{color: 'var(--accent-blue)'}}>€{(currentHole.carryIn || 0).toFixed(2)}</span></span>
-        <span>Compras: <span style={{color: 'var(--accent-green)'}}>€{purchaseTotal.toFixed(2)}</span></span>
+        <span>Compras: <span style={{color: 'var(--gr-turf)'}}>€{purchaseTotal.toFixed(2)}</span></span>
       </div>
 
-      {/* Equipos */}
       <div className="mb-4 grid grid-cols-1 gap-3">
         {game.teams.map((team, idx) => {
           const score = currentHole.scores.find((s) => s.teamId === team.id)!;
@@ -131,7 +123,6 @@ export default function GameLive() {
           const net = calculateNetScore(score.gross, handicapStrokes);
           const teamClass = `team-badge team-${idx + 1}`;
           const btnClass = `btn btn-team-${idx + 1}`;
-          const canEdit = true;
           return (
             <div key={team.id} className="card flex flex-col gap-1 shadow-lg border border-gray-700">
               <div className="flex justify-between items-center mb-1">
@@ -163,34 +154,21 @@ export default function GameLive() {
                 <span>Balance: <span className={team.balance && team.balance > 0 ? "text-success" : team.balance && team.balance < 0 ? "text-danger" : "text-white"}>€{team.balance?.toFixed(2)}</span></span>
               </div>
               <div className="flex gap-2 mt-2">
-                <button
-                  className={btnClass}
-                  onClick={() => handleBuyMulligan(team.id)}
-                  disabled={currentHole.isClosed}
-                >Mulligan</button>
-                <button
-                  className="btn btn-blue"
-                  onClick={() => setReverseTarget({ buyingTeamId: team.id, targetTeamId: game.teams[0].id })}
-                  disabled={currentHole.isClosed}
-                >Reverse</button>
+                <button className={btnClass} onClick={() => handleBuyMulligan(team.id)} disabled={currentHole.isClosed}>Mulligan</button>
+                <button className="btn btn-blue" onClick={() => setReverseTarget({ buyingTeamId: team.id, targetTeamId: game.teams[0].id })} disabled={currentHole.isClosed}>Reverse</button>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Reverse target selection modal */}
       {reverseTarget && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
           <div className="card" style={{minWidth: 220}}>
             <div className="mb-2 font-semibold text-white">Select target team for reverse</div>
             <div className="flex flex-col gap-2">
               {game.teams.filter(t => t.id !== reverseTarget.buyingTeamId).map(t => (
-                <button
-                  key={t.id}
-                  className="btn btn-blue"
-                  onClick={() => handleBuyReverse(reverseTarget.buyingTeamId, t.id)}
-                >{t.name}</button>
+                <button key={t.id} className="btn btn-blue" onClick={() => handleBuyReverse(reverseTarget.buyingTeamId, t.id)}>{t.name}</button>
               ))}
             </div>
             <button className="mt-4 text-xs underline text-gray-400" onClick={() => setReverseTarget(null)}>Cancel</button>
@@ -198,7 +176,6 @@ export default function GameLive() {
         </div>
       )}
 
-      {/* Provisional result */}
       <div className="my-4 card bg-opacity-80" style={{background: 'var(--card-bg)'}}>
         <div className="font-semibold text-white mb-1">Provisional result:</div>
         {currentHole.scores.some((s) => typeof s.gross !== "number" || isNaN(s.gross)) ? (
@@ -210,14 +187,13 @@ export default function GameLive() {
         )}
       </div>
 
-      {/* Event log tipo chat */}
       <div className="my-2 card bg-opacity-80" style={{background: 'var(--card-bg)'}}>
         <div className="font-semibold text-xs mb-1 text-white">Event log</div>
         <ul className="text-xs flex flex-col gap-1">
           {eventLog.map((e, i) => (
-            <li key={i} className="rounded px-2 py-1" style={{background: 'rgba(29,185,84,0.08)'}}>
+            <li key={i} className="rounded px-2 py-1" style={{background: 'rgba(95, 163, 106, 0.10)'}}>
               {e.type === "mulligan" && (
-                <span className="text-green-400">{game.teams.find(t => t.id === e.teamId)?.name} bought Mulligan <span className="text-white">(€{e.amount})</span></span>
+                <span className="text-success">{game.teams.find(t => t.id === e.teamId)?.name} bought Mulligan <span className="text-white">(€{e.amount})</span></span>
               )}
               {e.type === "reverse" && (
                 <span className="text-blue-400">{game.teams.find(t => t.id === e.teamId)?.name} bought Reverse on {game.teams.find(t => t.id === e.targetTeamId)?.name} <span className="text-white">(€{e.amount})</span></span>
@@ -227,20 +203,12 @@ export default function GameLive() {
         </ul>
       </div>
 
-      {/* Close hole button */}
-      <button
-        className="w-full btn btn-gold text-lg font-bold mb-4"
-        onClick={handleCloseHole}
-        disabled={currentHole.isClosed}
-      >Close Hole</button>
+      <button className="w-full btn btn-gold text-lg font-bold mb-4" onClick={handleCloseHole} disabled={currentHole.isClosed}>Close Hole</button>
 
-      {/* Error message */}
       {error && <div className="text-danger text-xs mb-2">{error}</div>}
 
-      {/* Extra Bets */}
       <Bets />
 
-      {/* Scoreboard */}
       <div className="my-4 card bg-opacity-80" style={{background: 'var(--card-bg)'}}>
         <div className="font-semibold mb-1 text-white">Scoreboard</div>
         <table className="w-full text-xs scoreboard-table">
@@ -267,8 +235,7 @@ export default function GameLive() {
         </table>
       </div>
 
-      {/* View summary button */}
-      <a href={`/game/${game.id}/summary`} className="block w-full btn btn-green text-lg font-bold mb-4">View Final Summary</a>
+      <a href={`/game/${routeGameId}/summary`} className="block w-full btn btn-green text-lg font-bold mb-4">View Final Summary</a>
     </div>
   );
 }
