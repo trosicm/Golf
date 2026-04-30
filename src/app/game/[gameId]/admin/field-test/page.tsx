@@ -138,6 +138,9 @@ export default function FieldTestAdminPage() {
       const mulligans = teamPurchases.filter((purchase) => purchaseType(purchase).includes("mulligan") && !purchaseType(purchase).includes("reverse")).length;
       const reverses = teamPurchases.filter((purchase) => purchaseType(purchase).includes("reverse")).length;
       const permission = permissions.find((row) => teamIdOf(row) === teamId) || {};
+      // Nuevo: disponibles
+      const mulligansAvailable = Number(gameTeam.mulligans_available) || 0;
+      const reversesAvailable = Number(gameTeam.reverses_available) || 0;
       return {
         id: teamId,
         name: team?.name || `Team ${index + 1}`,
@@ -145,6 +148,8 @@ export default function FieldTestAdminPage() {
         markerName: markerTeam?.name || "Not assigned",
         mulligans,
         reverses,
+        mulligansAvailable,
+        reversesAvailable,
         canEditOwnScore: permission.can_edit_own_score ?? false,
         canEditMarkedScore: permission.can_edit_marked_score ?? true,
         canCloseHoles: permission.can_close_holes ?? false,
@@ -297,10 +302,9 @@ export default function FieldTestAdminPage() {
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Mulligans & reverses</div>
-            <h2 className="text-xl font-black text-[var(--gr-sand)]">Current hole purchases</h2>
-            <p className="mt-1 text-sm text-[var(--gr-text-muted)]">Admin can add purchases by team for the current hole.</p>
+            <h2 className="text-xl font-black text-[var(--gr-sand)]">Disponibles por equipo</h2>
+            <p className="mt-1 text-sm text-[var(--gr-text-muted)]">Admin puede asignar los disponibles. El uso real se refleja en Live Game.</p>
           </div>
-          <div className="rounded-full bg-black px-4 py-2 text-sm font-black text-[var(--gr-sand)]">Reverse {money(currentPot)}</div>
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {teamRows.map((team) => (
@@ -308,12 +312,95 @@ export default function FieldTestAdminPage() {
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
                   <div className="text-lg font-black text-[var(--gr-sand)]">{team.name}</div>
-                  <div className="text-xs text-[var(--gr-text-muted)]">Mulligans {team.mulligans} · Reverses {team.reverses}</div>
+                  <div className="text-xs text-[var(--gr-text-muted)]">Mulligans usados: {team.mulligans} · Reverses usados: {team.reverses}</div>
+                  <div className="text-xs text-[var(--gr-gold)]">Disponibles: Mulligans <b>{team.mulligansAvailable}</b> · Reverses <b>{team.reversesAvailable}</b></div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <button className="btn btn-gold" disabled={saving} onClick={() => addPurchase(team.id, "mulligan")}>Add Mulligan</button>
-                <button className="btn btn-secondary" disabled={saving} onClick={() => addPurchase(team.id, "reverse")}>Add Reverse</button>
+                <button className="btn btn-gold" disabled={saving} onClick={async () => {
+                  setSaving(true);
+                  setError("");
+                  setMessage("");
+                  try {
+                    let query = supabase.from("game_teams").update({ mulligans_available: team.mulligansAvailable + 1 });
+                    if (gameTeams.find(gt => teamIdOf(gt) === team.id)?.id) {
+                      query = query.eq("id", gameTeams.find(gt => teamIdOf(gt) === team.id).id);
+                    } else {
+                      query = query.eq("game_id", gameId).eq("team_id", team.id);
+                    }
+                    const { error } = await query;
+                    if (error) throw error;
+                    setMessage("Mulligan disponible +1");
+                    await loadData();
+                  } catch (err: any) {
+                    setError(`No se pudo actualizar: ${err?.message || "Unknown Supabase error"}`);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}>+1 Mulligan</button>
+                <button className="btn btn-secondary" disabled={saving || team.mulligansAvailable <= 0} onClick={async () => {
+                  setSaving(true);
+                  setError("");
+                  setMessage("");
+                  try {
+                    let query = supabase.from("game_teams").update({ mulligans_available: Math.max(0, team.mulligansAvailable - 1) });
+                    if (gameTeams.find(gt => teamIdOf(gt) === team.id)?.id) {
+                      query = query.eq("id", gameTeams.find(gt => teamIdOf(gt) === team.id).id);
+                    } else {
+                      query = query.eq("game_id", gameId).eq("team_id", team.id);
+                    }
+                    const { error } = await query;
+                    if (error) throw error;
+                    setMessage("Mulligan disponible -1");
+                    await loadData();
+                  } catch (err: any) {
+                    setError(`No se pudo actualizar: ${err?.message || "Unknown Supabase error"}`);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}>-1 Mulligan</button>
+                <button className="btn btn-gold" disabled={saving} onClick={async () => {
+                  setSaving(true);
+                  setError("");
+                  setMessage("");
+                  try {
+                    let query = supabase.from("game_teams").update({ reverses_available: team.reversesAvailable + 1 });
+                    if (gameTeams.find(gt => teamIdOf(gt) === team.id)?.id) {
+                      query = query.eq("id", gameTeams.find(gt => teamIdOf(gt) === team.id).id);
+                    } else {
+                      query = query.eq("game_id", gameId).eq("team_id", team.id);
+                    }
+                    const { error } = await query;
+                    if (error) throw error;
+                    setMessage("Reverse disponible +1");
+                    await loadData();
+                  } catch (err: any) {
+                    setError(`No se pudo actualizar: ${err?.message || "Unknown Supabase error"}`);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}>+1 Reverse</button>
+                <button className="btn btn-secondary" disabled={saving || team.reversesAvailable <= 0} onClick={async () => {
+                  setSaving(true);
+                  setError("");
+                  setMessage("");
+                  try {
+                    let query = supabase.from("game_teams").update({ reverses_available: Math.max(0, team.reversesAvailable - 1) });
+                    if (gameTeams.find(gt => teamIdOf(gt) === team.id)?.id) {
+                      query = query.eq("id", gameTeams.find(gt => teamIdOf(gt) === team.id).id);
+                    } else {
+                      query = query.eq("game_id", gameId).eq("team_id", team.id);
+                    }
+                    const { error } = await query;
+                    if (error) throw error;
+                    setMessage("Reverse disponible -1");
+                    await loadData();
+                  } catch (err: any) {
+                    setError(`No se pudo actualizar: ${err?.message || "Unknown Supabase error"}`);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}>-1 Reverse</button>
               </div>
             </div>
           ))}
