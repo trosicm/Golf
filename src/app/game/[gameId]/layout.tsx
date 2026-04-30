@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import GameBottomNav from "../../../components/golfrivals/GameBottomNav";
+import GameTopMenu from "../../../components/golfrivals/GameTopMenu";
 
 export default function GameRouteLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -10,7 +11,8 @@ export default function GameRouteLayout({ children }: { children: React.ReactNod
   if (!gameId) return <>{children}</>;
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-24 pt-10">
+      <GameTopMenu gameId={gameId} />
       {children}
       <GameBottomNav gameId={gameId} />
     </div>
