@@ -25,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen font-sans" style={{ background: "var(--background)", color: "var(--foreground)" }}>
         <GlobalExitButton />
         <main className="mx-auto w-full min-h-screen flex flex-col px-2 sm:px-4 max-w-6xl">
-          <Logo variant="icon" size="md" className="brand-logo mx-auto my-6" />
+          <Logo variant="horizontal" size="sm" className="brand-logo mx-auto my-5" />
           {children}
         </main>
       </body>
