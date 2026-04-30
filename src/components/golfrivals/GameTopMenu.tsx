@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
@@ -13,6 +13,16 @@ type IconProps = {
   className?: string;
 };
 
+type MenuItem = {
+  label: string;
+  href?: string;
+  icon: (props: IconProps) => React.ReactElement;
+  danger?: boolean;
+  active?: boolean;
+  disabled?: boolean;
+  onClick?: () => void | Promise<void>;
+};
+
 function Svg({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
@@ -21,9 +31,6 @@ function Svg({ children, className = "" }: { children: React.ReactNode; classNam
   );
 }
 
-function MoreIcon({ className }: IconProps) {
-  return <Svg className={className}><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></Svg>;
-}
 function DashboardIcon({ className }: IconProps) {
   return <Svg className={className}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></Svg>;
 }
@@ -49,21 +56,57 @@ function ExitIcon({ className }: IconProps) {
   return <Svg className={className}><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M21 3v18" /></Svg>;
 }
 
-type MenuItem = {
-  label: string;
-  href?: string;
-  icon: (props: IconProps) => React.ReactElement;
-  danger?: boolean;
-  active?: boolean;
-  disabled?: boolean;
-  onClick?: () => void | Promise<void>;
-};
-
 export default function GameTopMenu({ gameId }: GameTopMenuProps) {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const pathname = usePathname();
   const router = useRouter();
+
+  const adminHref = `/game/${gameId}/admin`;
+
+  useEffect(() => {
+    if (!gameId || typeof document === "undefined") return;
+
+    const adminChip = document.querySelector(`a[href="${adminHref}"]`) as HTMLAnchorElement | null;
+    if (!adminChip) return;
+
+    adminChip.setAttribute("role", "button");
+    adminChip.setAttribute("aria-haspopup", "menu");
+    adminChip.setAttribute("title", "Open menu");
+    adminChip.style.display = "inline-flex";
+
+    const oldSignOut = Array.from(document.querySelectorAll("button, a")).find((element) => {
+      const text = element.textContent?.trim().toLowerCase();
+      return text === "salir" || text === "sign out";
+    }) as HTMLElement | undefined;
+    if (oldSignOut) oldSignOut.style.display = "none";
+
+    const onClick = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setAnchorRect(adminChip.getBoundingClientRect());
+      setOpen((current) => !current);
+    };
+
+    adminChip.addEventListener("click", onClick);
+    return () => {
+      adminChip.removeEventListener("click", onClick);
+      adminChip.style.display = "";
+      if (oldSignOut) oldSignOut.style.display = "";
+    };
+  }, [adminHref, gameId, pathname]);
+
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    const onResize = () => setOpen(false);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onResize, true);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onResize, true);
+    };
+  }, [open]);
 
   const refresh = () => {
     setOpen(false);
@@ -77,8 +120,8 @@ export default function GameTopMenu({ gameId }: GameTopMenuProps) {
     router.push("/auth/login");
   };
 
-  const menuItems: MenuItem[] = [
-    { label: "Admin", href: `/game/${gameId}/admin`, icon: AdminIcon, active: pathname === `/game/${gameId}/admin` },
+  const menuItems: MenuItem[] = useMemo(() => [
+    { label: "Admin", href: adminHref, icon: AdminIcon, active: pathname === adminHref },
     { label: "Bets", href: `/game/${gameId}/bets`, icon: BetsIcon, active: pathname === `/game/${gameId}/bets` },
     { label: "Dashboard", href: "/app", icon: DashboardIcon, active: pathname === "/app" },
     { label: "Leaderboard", href: `/game/${gameId}/leaderboard`, icon: TrophyIcon, active: pathname === `/game/${gameId}/leaderboard` },
@@ -86,57 +129,53 @@ export default function GameTopMenu({ gameId }: GameTopMenuProps) {
     { label: "Refresh", icon: RefreshIcon, onClick: refresh },
     { label: "Scorecard", href: `/game/${gameId}/scorecard`, icon: ScorecardIcon, active: pathname === `/game/${gameId}/scorecard` },
     { label: signingOut ? "Signing out..." : "Sign out", icon: ExitIcon, onClick: signOut, danger: true, disabled: signingOut },
-  ];
+  ], [adminHref, gameId, pathname, signingOut]);
+
+  if (!open || !anchorRect || typeof window === "undefined") return null;
+
+  const menuWidth = 256;
+  const left = Math.max(12, Math.min(anchorRect.right - menuWidth, window.innerWidth - menuWidth - 12));
+  const top = anchorRect.bottom + 10;
 
   return (
-    <div className="fixed right-3 top-3 z-50">
-      <button
-        type="button"
-        aria-label="Open game menu"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--gr-border)] bg-[rgba(8,18,16,0.94)] text-[var(--gr-sand)] shadow-xl backdrop-blur-xl transition hover:border-[var(--gr-gold)]"
+    <>
+      <button aria-label="Close game menu" className="fixed inset-0 z-40 cursor-default bg-transparent" onClick={() => setOpen(false)} />
+      <div
+        role="menu"
+        className="fixed z-50 w-64 overflow-hidden rounded-3xl border border-[var(--gr-border)] bg-[rgba(8,18,16,0.98)] p-2 shadow-2xl backdrop-blur-xl"
+        style={{ top, left }}
       >
-        <MoreIcon className="h-5 w-5" />
-      </button>
+        <div className="mb-1 rounded-2xl border border-[rgba(198,161,91,0.22)] bg-[rgba(198,161,91,0.08)] px-3 py-3">
+          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--gr-gold)]">Menu</div>
+          <div className="mt-1 text-sm font-black text-[var(--gr-sand)]">Golf Rivals</div>
+        </div>
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          const baseClass = `mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-black transition disabled:opacity-50 ${
+            item.active
+              ? "bg-[var(--gr-gold)] text-[var(--gr-carbon)]"
+              : item.danger
+                ? "text-[var(--gr-danger)] hover:bg-[rgba(201,92,74,0.12)]"
+                : "text-[var(--gr-sand)] hover:bg-[rgba(239,232,218,0.08)]"
+          }`;
 
-      {open && (
-        <>
-          <button aria-label="Close game menu" className="fixed inset-0 -z-10 cursor-default bg-transparent" onClick={() => setOpen(false)} />
-          <div className="mt-2 w-64 overflow-hidden rounded-3xl border border-[var(--gr-border)] bg-[rgba(8,18,16,0.98)] p-2 shadow-2xl backdrop-blur-xl">
-            <div className="mb-1 rounded-2xl border border-[rgba(198,161,91,0.22)] bg-[rgba(198,161,91,0.08)] px-3 py-3">
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--gr-gold)]">Menu</div>
-              <div className="mt-1 text-sm font-black text-[var(--gr-sand)]">Golf Rivals</div>
-            </div>
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              const baseClass = `mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-black transition disabled:opacity-50 ${
-                item.active
-                  ? "bg-[var(--gr-gold)] text-[var(--gr-carbon)]"
-                  : item.danger
-                    ? "text-[var(--gr-danger)] hover:bg-[rgba(201,92,74,0.12)]"
-                    : "text-[var(--gr-sand)] hover:bg-[rgba(239,232,218,0.08)]"
-              }`;
+          if (item.href) {
+            return (
+              <Link key={item.label} href={item.href} onClick={() => setOpen(false)} className={baseClass}>
+                <Icon className="h-5 w-5 shrink-0" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          }
 
-              if (item.href) {
-                return (
-                  <Link key={item.label} href={item.href} onClick={() => setOpen(false)} className={baseClass}>
-                    <Icon className="h-5 w-5 shrink-0" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              }
-
-              return (
-                <button key={item.label} type="button" onClick={item.onClick} disabled={item.disabled} className={baseClass}>
-                  <Icon className="h-5 w-5 shrink-0" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
+          return (
+            <button key={item.label} type="button" onClick={item.onClick} disabled={item.disabled} className={baseClass}>
+              <Icon className="h-5 w-5 shrink-0" />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
