@@ -2,7 +2,7 @@ import React from "react";
 
 export type LogoProps = {
   variant?: "primary" | "horizontal" | "icon" | "monogram" | "white" | "gold";
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg" | "xl" | "hero";
   className?: string;
   priority?: boolean;
   alt?: string;
@@ -18,10 +18,11 @@ const variantToPath: Record<string, string> = {
 };
 
 const sizeToHeight: Record<string, number> = {
-  sm: 32,
-  md: 48,
-  lg: 72,
-  xl: 110,
+  sm: 40,
+  md: 56,
+  lg: 84,
+  xl: 140,
+  hero: 260,
 };
 
 export const Logo: React.FC<LogoProps> = ({
@@ -32,7 +33,7 @@ export const Logo: React.FC<LogoProps> = ({
   alt = "Golf Rivals Logo",
 }) => {
   const src = variantToPath[variant] || variantToPath["primary"];
-  const height = sizeToHeight[size] || 48;
+  const height = sizeToHeight[size] || 56;
   return (
     <img
       src={src}
