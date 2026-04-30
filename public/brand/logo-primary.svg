@@ -1,13 +1,61 @@
-<svg width="420" height="110" viewBox="0 0 420 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="420" height="110" rx="24" fill="#0F2D28"/>
-  <g>
-    <circle cx="60" cy="55" r="36" fill="#181B1E"/>
-    <path d="M40 90V30L80 40L60 46" stroke="#C6A15B" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="60" cy="80" r="6" fill="#C6A15B"/>
-    <path d="M60 80Q72 66 92 74" stroke="#5FA36A" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <text x="48" y="72" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="bold" fill="#EFE8DA">G</text>
-    <text x="70" y="72" font-family="Geist, Arial, sans-serif" font-size="28" font-weight="bold" fill="#EFE8DA">R</text>
+<svg width="980" height="250" viewBox="0 0 980 250" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="980" y2="250" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7ECD0"/>
+      <stop offset="0.48" stop-color="#E5D3AA"/>
+      <stop offset="1" stop-color="#F2E5C5"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="980" y2="250" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102E28"/>
+      <stop offset="1" stop-color="#071915"/>
+    </linearGradient>
+    <filter id="shadow" x="-30" y="-30" width="1040" height="310" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="18" flood-color="#000000" flood-opacity="0.48"/>
+    </filter>
+    <pattern id="micro" width="16" height="16" patternUnits="userSpaceOnUse">
+      <path d="M0 8 Q4 0 8 8 T16 8" stroke="#0F2D28" stroke-opacity="0.16" stroke-width="0.8" fill="none"/>
+      <path d="M0 14 H16" stroke="#C6A15B" stroke-opacity="0.10" stroke-width="0.6"/>
+    </pattern>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="24" y="28" width="932" height="194" rx="24" fill="url(#paper)"/>
+    <rect x="38" y="42" width="904" height="166" rx="18" fill="url(#micro)"/>
+    <rect x="44" y="48" width="892" height="154" rx="16" stroke="#0F2D28" stroke-width="5"/>
+    <rect x="58" y="62" width="864" height="126" rx="12" stroke="#C6A15B" stroke-width="2" stroke-opacity="0.75"/>
+    <path d="M88 62 H892" stroke="#0F2D28" stroke-width="3" stroke-opacity="0.55"/>
+    <path d="M88 188 H892" stroke="#0F2D28" stroke-width="3" stroke-opacity="0.55"/>
+
+    <circle cx="140" cy="125" r="64" fill="url(#green)" stroke="#C6A15B" stroke-width="5"/>
+    <circle cx="140" cy="125" r="49" fill="none" stroke="#E8D3A0" stroke-width="2" stroke-opacity="0.7"/>
+    <path d="M104 178V70L174 86L140 97" stroke="#C6A15B" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="140" cy="164" r="8" fill="#C6A15B"/>
+    <path d="M140 164Q155 141 190 151" stroke="#5FA36A" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <text x="116" y="139" font-family="Georgia, 'Times New Roman', serif" font-size="54" font-weight="800" fill="#EFE8DA">G</text>
+    <text x="153" y="139" font-family="Georgia, 'Times New Roman', serif" font-size="54" font-weight="800" fill="#EFE8DA">R</text>
+
+    <g opacity="0.85">
+      <path d="M215 83 C250 52 312 52 347 83" stroke="#0F2D28" stroke-width="2" fill="none"/>
+      <path d="M633 83 C668 52 730 52 765 83" stroke="#0F2D28" stroke-width="2" fill="none"/>
+      <path d="M215 167 C250 198 312 198 347 167" stroke="#0F2D28" stroke-width="2" fill="none"/>
+      <path d="M633 167 C668 198 730 198 765 167" stroke="#0F2D28" stroke-width="2" fill="none"/>
+    </g>
+
+    <text x="235" y="134" font-family="Georgia, 'Times New Roman', serif" font-size="82" font-weight="900" letter-spacing="7" fill="#0F2D28" stroke="#C6A15B" stroke-width="1.2">GOLF RIVALS</text>
+    <rect x="348" y="148" width="284" height="36" rx="18" fill="#0F2D28" stroke="#C6A15B" stroke-width="3"/>
+    <text x="391" y="173" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="800" letter-spacing="4" fill="#F3E3BD">COMPETE. BET. WIN.</text>
+
+    <circle cx="836" cy="125" r="57" fill="url(#green)" stroke="#C6A15B" stroke-width="5"/>
+    <circle cx="836" cy="125" r="42" fill="#DCC89D" fill-opacity="0.15" stroke="#E8D3A0" stroke-opacity="0.55" stroke-width="2"/>
+    <path d="M812 158V86" stroke="#EFE8DA" stroke-width="5" stroke-linecap="round"/>
+    <path d="M812 90H854L844 105L854 120H812" fill="#EFE8DA" opacity="0.9"/>
+    <circle cx="812" cy="166" r="6" fill="#C6A15B"/>
+    <path d="M879 72l18 -18" stroke="#C6A15B" stroke-width="3"/>
+    <path d="M901 74l-22 -22" stroke="#C6A15B" stroke-width="3"/>
+
+    <text x="70" y="82" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="900" fill="#0F2D28">100</text>
+    <text x="875" y="82" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="900" fill="#0F2D28">100</text>
+    <text x="70" y="178" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="900" fill="#0F2D28">100</text>
+    <text x="875" y="178" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="900" fill="#0F2D28">100</text>
   </g>
-  <text x="120" y="70" font-family="Geist, Arial, sans-serif" font-size="48" font-weight="bold" fill="#C6A15B">GOLF RIVALS</text>
-  <text x="120" y="98" font-family="Geist, Arial, sans-serif" font-size="18" font-weight="500" fill="#EFE8DA">EVERY HOLE HAS A PRICE.</text>
 </svg>
