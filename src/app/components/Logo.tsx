@@ -9,9 +9,9 @@ export type LogoProps = {
 };
 
 const variantToPath: Record<string, string> = {
-  primary: "/brand/logo-primary.svg",
-  horizontal: "/brand/logo-horizontal.svg",
-  icon: "/brand/logo-icon.svg",
+  primary: "/brand/golf-rivals-bill-large.png",
+  horizontal: "/brand/golf-rivals-bill-small.png",
+  icon: "/brand/golf-rivals-bill-small.png",
   monogram: "/brand/logo-monogram.svg",
   white: "/brand/logo-white.svg",
   gold: "/brand/logo-gold.svg",

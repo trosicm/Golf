@@ -16,7 +16,12 @@ export default function Home() {
       <div className="pointer-events-none absolute left-1/2 top-8 -z-10 h-72 w-72 -translate-x-1/2 rounded-full bg-[rgba(198,161,91,0.08)] blur-3xl" />
 
       <section className="flex w-full max-w-6xl flex-1 flex-col items-center justify-center">
-        <Logo variant="primary" size="hero" priority className="mb-10 w-full max-w-5xl drop-shadow-2xl" />
+        <img
+          src="/brand/golf-rivals-bill-large.png"
+          alt="Golf Rivals Bill Logo"
+          className="mb-10 w-full max-w-5xl h-auto object-contain"
+          style={{ display: 'block' }}
+        />
 
         <Badge variant="gold" className="mb-4">Every Hole Has a Price.</Badge>
         <h1 className="mb-4 max-w-3xl text-4xl font-black tracking-tight text-[var(--gr-sand)] sm:text-6xl">
