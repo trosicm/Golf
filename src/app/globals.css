@@ -325,8 +325,8 @@ textarea:focus {
     font-size: 1rem;
   }
 
-  /* Live Match still had legacy Admin/Profile + Refresh controls. The compact top menu replaces them on mobile. */
-  .flex.flex-col.items-end.gap-2:has(> button[type="button"]) {
+  /* Live Match old Admin/Profile chip is now handled by the compact menu. Refresh stays visible for match-day use. */
+  .flex.flex-col.items-end.gap-2 > a:first-child {
     display: none;
   }
 }
