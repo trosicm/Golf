@@ -10,6 +10,7 @@ import {
   SIDE_BET_CATEGORY_ORDER,
   SIDE_BET_PRESETS,
   type SideBetCategory,
+  type SideBetPreset,
 } from "../../../../lib/golfrivals/sideBets";
 
 const n = (value: any, fallback = 0) => {
@@ -36,8 +37,15 @@ export default function BetsPage() {
   const gameId = Array.isArray(params?.gameId) ? params.gameId[0] : params?.gameId;
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [activeCategory, setActiveCategory] = useState<Exclude<SideBetCategory, "quick"> | "quick">("quick");
+  const [selectedPreset, setSelectedPreset] = useState<SideBetPreset | null>(null);
+  const [stake, setStake] = useState("20");
+  const [customTitle, setCustomTitle] = useState("");
+  const [customDescription, setCustomDescription] = useState("");
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [invite, setInvite] = useState<any>(null);
   const [gameTeams, setGameTeams] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
@@ -142,8 +150,88 @@ export default function BetsPage() {
   const presetRows = getSideBetPresetsByCategory(activeCategory);
   const totalPresetCount = SIDE_BET_PRESETS.length;
 
+  const openDrawer = (preset: SideBetPreset) => {
+    setSelectedPreset(preset);
+    setStake("20");
+    setCustomTitle(preset.type === "CUSTOM_BET" ? "" : preset.title);
+    setCustomDescription(preset.type === "CUSTOM_BET" ? "" : preset.description);
+    setSelectedTeamIds(teamRows.map((team) => team.id).filter(Boolean));
+    setMessage("");
+    setError("");
+  };
+
+  const toggleTeam = (teamId: string) => {
+    setSelectedTeamIds((current) => current.includes(teamId) ? current.filter((id) => id !== teamId) : [...current, teamId]);
+  };
+
+  const createBet = async () => {
+    if (!gameId || !selectedPreset) return;
+    const amount = Number(stake);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Stake must be greater than 0.");
+      return;
+    }
+    if (selectedTeamIds.length < 2) {
+      setError("Choose at least 2 teams for the bet.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const title = selectedPreset.type === "CUSTOM_BET" ? customTitle.trim() || "Apuesta libre" : selectedPreset.title;
+      const description = selectedPreset.type === "CUSTOM_BET" ? customDescription.trim() || "Custom side bet" : selectedPreset.description;
+      const betPayload = {
+        game_id: gameId,
+        hole_number: selectedPreset.scope === "hole" ? null : null,
+        scope: selectedPreset.scope,
+        category: selectedPreset.category,
+        type: selectedPreset.type,
+        title,
+        description,
+        created_by_team_id: null,
+        created_by_player_id: playerIdOf(invite) || null,
+        target_type: selectedTeamIds.length === teamRows.length ? "all" : "multiple_teams",
+        target_team_ids: selectedTeamIds,
+        amount,
+        currency: "EUR",
+        status: "open",
+        accepted_by_team_ids: selectedTeamIds,
+        declined_by_team_ids: [],
+        loser_team_ids: [],
+        resolution_mode: "manual",
+        is_quick_bet: selectedPreset.isQuick,
+        is_custom: selectedPreset.type === "CUSTOM_BET",
+        requires_manual_resolution: true,
+      };
+
+      const { data: betData, error: betError } = await supabase.from("game_bets").insert(betPayload).select("*").single();
+      if (betError) throw betError;
+
+      const participantRows = selectedTeamIds.map((teamId) => ({
+        game_id: gameId,
+        bet_id: betData.id,
+        team_id: teamId,
+        role: "participant",
+        status: "accepted",
+      }));
+      const { error: participantsError } = await supabase.from("game_bet_participants").insert(participantRows);
+      if (participantsError) throw participantsError;
+
+      setMessage(`Bet created: ${title} · €${amount.toFixed(0)}`);
+      setSelectedPreset(null);
+      await loadData();
+    } catch (err: any) {
+      setError(`Could not create bet: ${err?.message || "Unknown Supabase error"}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return <div className="p-4 text-[var(--gr-sand)]">Loading bets...</div>;
-  if (error) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
+  if (error && !selectedPreset) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
@@ -158,6 +246,8 @@ export default function BetsPage() {
           {isAdmin && <Link href={`/game/${gameId}/admin`} className="btn btn-gold">Admin</Link>}
         </div>
       </div>
+
+      {message && <div className="mb-4 rounded-xl border border-[var(--gr-turf)] bg-[rgba(95,163,106,0.12)] p-3 text-sm text-[var(--gr-sand)]">{message}</div>}
 
       <section className="card mb-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -190,34 +280,18 @@ export default function BetsPage() {
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Create bet</div>
-            <div className="text-sm text-[var(--gr-text-muted)]">Choose a preset. Creation and settlement come next.</div>
+            <div className="text-sm text-[var(--gr-text-muted)]">Choose preset, teams and stake.</div>
           </div>
           <div className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-xs font-black text-[var(--gr-sand)]">{SIDE_BET_CATEGORY_LABELS[activeCategory]}</div>
         </div>
         <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
           {SIDE_BET_CATEGORY_ORDER.map((category) => (
-            <button
-              key={category}
-              type="button"
-              onClick={() => setActiveCategory(category)}
-              className={`shrink-0 rounded-full border px-4 py-2 text-xs font-black uppercase ${
-                activeCategory === category
-                  ? "border-[var(--gr-gold)] bg-[var(--gr-gold)] text-[var(--gr-carbon)]"
-                  : "border-[var(--gr-border)] text-[var(--gr-text-muted)]"
-              }`}
-            >
-              {SIDE_BET_CATEGORY_LABELS[category]}
-            </button>
+            <button key={category} type="button" onClick={() => setActiveCategory(category)} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-black uppercase ${activeCategory === category ? "border-[var(--gr-gold)] bg-[var(--gr-gold)] text-[var(--gr-carbon)]" : "border-[var(--gr-border)] text-[var(--gr-text-muted)]"}`}>{SIDE_BET_CATEGORY_LABELS[category]}</button>
           ))}
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {presetRows.map((preset) => (
-            <button
-              key={preset.type}
-              type="button"
-              className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.32)] p-4 text-left transition hover:border-[var(--gr-gold)] hover:bg-[rgba(20,68,55,0.55)]"
-              onClick={() => alert(`Next step: create ${preset.title}`)}
-            >
+            <button key={preset.type} type="button" className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.32)] p-4 text-left transition hover:border-[var(--gr-gold)] hover:bg-[rgba(20,68,55,0.55)]" onClick={() => openDrawer(preset)}>
               <div className="mb-2 flex items-start justify-between gap-3">
                 <div className="text-lg font-black text-[var(--gr-sand)]">{preset.title}</div>
                 {preset.isQuick && <span className="rounded-full bg-[var(--gr-gold)] px-2 py-1 text-[10px] font-black uppercase text-[var(--gr-carbon)]">Quick</span>}
@@ -236,24 +310,13 @@ export default function BetsPage() {
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Open bets</div>
-            <div className="text-sm text-[var(--gr-text-muted)]">Active bets will be stored in Supabase.</div>
+            <div className="text-sm text-[var(--gr-text-muted)]">Active bets stored in Supabase.</div>
           </div>
         </div>
-        {openBets.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--gr-border)] p-5 text-center text-[var(--gr-text-muted)]">
-            No active bets yet. Next step: create the Supabase tables and creation modal.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {openBets.map((bet) => (
-              <div key={bet.id} className="rounded-2xl border border-[var(--gr-border)] p-4">
-                <div className="font-black text-[var(--gr-sand)]">{bet.title || bet.type || "Side bet"}</div>
-                <div className="text-sm text-[var(--gr-text-muted)]">Stake {money(betAmount(bet))} · {betStatus(bet)}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        {openBets.length === 0 ? <div className="rounded-2xl border border-dashed border-[var(--gr-border)] p-5 text-center text-[var(--gr-text-muted)]">No active bets yet.</div> : <div className="space-y-2">{openBets.map((bet) => <div key={bet.id} className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.25)] p-4"><div className="font-black text-[var(--gr-sand)]">{bet.title || bet.type || "Side bet"}</div><div className="text-sm text-[var(--gr-text-muted)]">Stake {money(betAmount(bet))} · {betStatus(bet)} · {Array.isArray(bet.target_team_ids) ? bet.target_team_ids.length : 0} teams</div></div>)}</div>}
       </section>
+
+      {selectedPreset && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center"><div className="w-full max-w-lg rounded-3xl border border-[var(--gr-border)] bg-[var(--gr-carbon)] p-4 shadow-2xl"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Create side bet</div><div className="text-2xl font-black text-[var(--gr-sand)]">{selectedPreset.title}</div><div className="text-sm text-[var(--gr-text-muted)]">{selectedPreset.description}</div></div><button className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-sm font-bold" type="button" onClick={() => setSelectedPreset(null)}>Close</button></div>{error && <div className="mb-3 rounded-xl border border-[var(--gr-danger)] bg-[rgba(201,92,74,0.12)] p-3 text-sm text-danger">{error}</div>}<div className="space-y-3"><div><label className="mb-1 block text-xs font-black uppercase text-[var(--gr-text-muted)]">Stake per bet</label><input className="w-full rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.35)] px-4 py-3 text-xl font-black text-[var(--gr-sand)] outline-none" type="number" inputMode="numeric" value={stake} onChange={(event) => setStake(event.target.value)} /></div>{selectedPreset.type === "CUSTOM_BET" && <><div><label className="mb-1 block text-xs font-black uppercase text-[var(--gr-text-muted)]">Title</label><input className="w-full rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.35)] px-4 py-3 text-[var(--gr-sand)] outline-none" value={customTitle} onChange={(event) => setCustomTitle(event.target.value)} placeholder="Example: Liam no puede pegar draw" /></div><div><label className="mb-1 block text-xs font-black uppercase text-[var(--gr-text-muted)]">Condition</label><textarea className="min-h-24 w-full rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.35)] px-4 py-3 text-[var(--gr-sand)] outline-none" value={customDescription} onChange={(event) => setCustomDescription(event.target.value)} placeholder="Write the bet condition" /></div></>}<div><div className="mb-2 text-xs font-black uppercase text-[var(--gr-text-muted)]">Teams involved</div><div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{teamRows.map((team) => <button key={team.id} type="button" onClick={() => toggleTeam(team.id)} className={`rounded-2xl border p-3 text-left ${selectedTeamIds.includes(team.id) ? "border-[var(--gr-gold)] bg-[rgba(212,174,96,0.16)]" : "border-[var(--gr-border)] bg-[rgba(20,68,55,0.25)]"}`}><div className="font-black text-[var(--gr-sand)]">{team.name}</div><div className="text-xs text-[var(--gr-text-muted)]">{team.players}</div></button>)}</div></div><button type="button" className="btn btn-gold w-full" disabled={saving} onClick={createBet}>{saving ? "Creating..." : "Create bet"}</button></div></div></div>}
     </div>
   );
 }
