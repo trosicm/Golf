@@ -33,6 +33,8 @@ const purchaseHoleNumber = (row: any) => row?.hole_number ?? row?.holeNumber ?? 
 const potValue = (row: any) => n(row?.pot_value ?? row?.pot ?? row?.value ?? row?.amount);
 const walletValue = (row: any) => n(row?.current_balance ?? row?.balance ?? row?.starting_balance ?? row?.total ?? row?.amount);
 const isWinner = (row: any, teamId: string) => row?.is_winner === true || row?.winner === true || row?.winner_team_id === teamId;
+const markerTeamIdOf = (row: any) => row?.marker_team_id ?? row?.markerTeamId;
+const markedTeamIdOf = (row: any) => row?.marked_team_id ?? row?.markedTeamId;
 
 function teamPlayerIds(team: any) {
   return [team?.player_1_id, team?.player_2_id, team?.player1_id, team?.player2_id, team?.player_a_id, team?.player_b_id].filter(Boolean);
@@ -98,6 +100,7 @@ export default function GameLive() {
   const [teams, setTeams] = useState<any[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
   const [gameInvites, setGameInvites] = useState<any[]>([]);
+  const [teamMarkers, setTeamMarkers] = useState<any[]>([]);
   const [holeResults, setHoleResults] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
@@ -142,19 +145,20 @@ export default function GameLive() {
       return;
     }
 
-    const [gameRes, holesRes, gameTeamsRes, teamsRes, playersRes, invitesRes, resultsRes, purchasesRes, walletsRes] = await Promise.all([
+    const [gameRes, holesRes, gameTeamsRes, teamsRes, playersRes, invitesRes, markersRes, resultsRes, purchasesRes, walletsRes] = await Promise.all([
       supabase.from("games").select("*").eq("id", gameId).maybeSingle(),
       supabase.from("holes").select("*").eq("game_id", gameId),
       supabase.from("game_teams").select("*").eq("game_id", gameId),
       supabase.from("teams").select("*"),
       supabase.from("players").select("*"),
       supabase.from("game_invites").select("*").eq("game_id", gameId),
+      supabase.from("game_team_markers").select("*").eq("game_id", gameId),
       supabase.from("hole_results").select("*").eq("game_id", gameId),
       supabase.from("purchases").select("*").eq("game_id", gameId),
       supabase.from("game_player_wallets").select("*").eq("game_id", gameId),
     ]);
 
-    const failed = [["games", gameRes], ["holes", holesRes], ["game_teams", gameTeamsRes], ["teams", teamsRes], ["players", playersRes], ["game_invites", invitesRes], ["hole_results", resultsRes], ["purchases", purchasesRes], ["game_player_wallets", walletsRes]].find(([, res]: any) => res.error);
+    const failed = [["games", gameRes], ["holes", holesRes], ["game_teams", gameTeamsRes], ["teams", teamsRes], ["players", playersRes], ["game_invites", invitesRes], ["game_team_markers", markersRes], ["hole_results", resultsRes], ["purchases", purchasesRes], ["game_player_wallets", walletsRes]].find(([, res]: any) => res.error);
     if (failed) {
       setError(`${failed[0]}: ${(failed[1] as any).error.message}`);
       setLoading(false);
@@ -168,6 +172,7 @@ export default function GameLive() {
     setTeams(teamsRes.data || []);
     setPlayers(playersRes.data || []);
     setGameInvites(invitesRes.data || []);
+    setTeamMarkers(markersRes.data || []);
     setHoleResults(resultsRes.data || []);
     setPurchases(purchasesRes.data || []);
     setWallets(walletsRes.data || []);
@@ -187,9 +192,7 @@ export default function GameLive() {
 
   useEffect(() => {
     if (!gameId) return;
-    const interval = window.setInterval(() => {
-      loadData(true);
-    }, 30000);
+    const interval = window.setInterval(() => loadData(true), 30000);
     return () => window.clearInterval(interval);
   }, [gameId]);
 
@@ -213,6 +216,21 @@ export default function GameLive() {
     window.localStorage.setItem(currentHoleStorageKey(gameId), String(liveData.currentHoleNumber));
   }, [gameId, liveData.currentHoleNumber]);
 
+  const isAdmin = String(invite?.role || "").toLowerCase() === "admin";
+  const currentPlayerId = playerIdOf(invite);
+  const currentTeamId = useMemo(() => {
+    if (invite?.team_id || invite?.teamId) return invite.team_id ?? invite.teamId;
+    const directTeam = teams.find((team) => teamPlayerIds(team).includes(currentPlayerId));
+    if (directTeam) return directTeam.id;
+    const inviteIndex = gameInvites.findIndex((row) => playerIdOf(row) === currentPlayerId || String(row.email || "").toLowerCase() === String(invite?.email || "").toLowerCase());
+    if (inviteIndex >= 0) return teamIdOf(gameTeams[Math.floor(inviteIndex / 2)]);
+    return null;
+  }, [invite, currentPlayerId, teams, gameInvites, gameTeams]);
+
+  const markedTeamIds = useMemo(() => {
+    return teamMarkers.filter((row) => markerTeamIdOf(row) === currentTeamId).map(markedTeamIdOf).filter(Boolean);
+  }, [teamMarkers, currentTeamId]);
+
   const teamRows = useMemo(() => {
     return gameTeams.map((gameTeam, index) => {
       const teamId = teamIdOf(gameTeam);
@@ -233,9 +251,12 @@ export default function GameLive() {
       const reversesUsed = teamPurchases.filter((purchase) => purchaseType(purchase).includes("reverse")).length;
       const currentHoleMulligans = teamPurchases.filter((purchase) => purchaseHoleNumber(purchase) === liveData.currentHoleNumber && purchaseType(purchase).includes("mulligan") && !purchaseType(purchase).includes("reverse")).length;
       const currentHoleReverses = teamPurchases.filter((purchase) => purchaseHoleNumber(purchase) === liveData.currentHoleNumber && purchaseType(purchase).includes("reverse")).length;
-      return { id: teamId, name: team?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", handicap: team?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-", score: currentResult?.gross_score ?? currentResult?.gross ?? currentResult?.score ?? "-", net: currentResult?.net_score ?? currentResult?.net ?? "-", baseFunds, won, spent, balance: baseFunds + won - spent, holesWon: winnerResults.length, mulligansLeft: Math.max(0, n(game?.max_mulligans_per_team, 5) - mulligansUsed), reversesLeft: Math.max(0, n(game?.max_reverses_per_team, 2) - reversesUsed), currentHoleMulligans, currentHoleReverses };
+      const markerRow = teamMarkers.find((row) => markedTeamIdOf(row) === teamId);
+      const markerTeam = teams.find((item) => item.id === markerTeamIdOf(markerRow));
+      const canEditScore = isAdmin || markedTeamIds.includes(teamId);
+      return { id: teamId, name: team?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", handicap: team?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-", score: currentResult?.gross_score ?? currentResult?.gross ?? currentResult?.score ?? "-", net: currentResult?.net_score ?? currentResult?.net ?? "-", baseFunds, won, spent, balance: baseFunds + won - spent, holesWon: winnerResults.length, mulligansLeft: Math.max(0, n(game?.max_mulligans_per_team, 5) - mulligansUsed), reversesLeft: Math.max(0, n(game?.max_reverses_per_team, 2) - reversesUsed), currentHoleMulligans, currentHoleReverses, canEditScore, markerName: markerTeam?.name || "Marker pending" };
     });
-  }, [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets, liveData, game]);
+  }, [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets, liveData, game, teamMarkers, isAdmin, markedTeamIds]);
 
   const scoringRows = useMemo(() => {
     const si = strokeIndex(liveData.currentHole);
@@ -254,18 +275,45 @@ export default function GameLive() {
     setMessage("");
   }, [liveData.currentHoleNumber]);
 
-  const setTeamGrossScore = (teamId: string, score: number | string) => {
-    setGrossScores((current) => ({ ...current, [teamId]: String(score) }));
-    setCalculation(null);
+  const saveDraftScore = async (team: any, score: number | string) => {
+    if (!gameId || !team.canEditScore) return;
+    const grossScore = Number(score);
+    if (!Number.isFinite(grossScore) || grossScore <= 0) return;
+    const received = strokesReceived(team.handicap, strokeIndex(liveData.currentHole));
+    const netScore = grossScore - received;
+    setSaving(true);
     setMessage("");
+    try {
+      const holeId = liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id;
+      await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_number", liveData.currentHoleNumber).eq("team_id", team.id);
+      if (holeId) await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_id", holeId).eq("team_id", team.id);
+      const row = { game_id: gameId, hole_id: holeId, hole_number: liveData.currentHoleNumber, team_id: team.id, gross_score: grossScore, gross: grossScore, score: grossScore, strokes_received: received, net_score: netScore, net: netScore, is_winner: false, is_tied: false, result_type: "draft", pot_value: 0 };
+      await insertWithFallback("hole_results", [row], [
+        ({ gross, net, result_type, pot_value, ...rest }) => rest,
+        ({ hole_id, gross, net, result_type, pot_value, ...rest }) => rest,
+        ({ hole_id, hole_number, gross_score, gross, net_score, net, strokes_received, result_type, pot_value, is_winner, is_tied, ...rest }) => rest,
+      ]);
+      setGrossScores((current) => ({ ...current, [team.id]: String(grossScore) }));
+      setHoleResults((current) => [...current.filter((result) => !(teamIdOf(result) === team.id && (resultHoleNumber(result) === liveData.currentHoleNumber || (result.hole_id ?? result.holeId) === holeId))), row]);
+      setCalculation(null);
+      setMessage(`Saved marker score for ${team.name}: ${grossScore}`);
+    } catch (err: any) {
+      setMessage(`Could not save score: ${err?.message || "Unknown Supabase error"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const calculateWinner = () => {
+    if (!isAdmin) {
+      setCalculation({ type: "error", message: "Only admin can calculate and confirm the hole." });
+      return;
+    }
     const results: TeamResult[] = [];
     for (const team of scoringRows) {
       const grossScore = Number(team.grossInput);
       if (team.grossInput === "" || !Number.isFinite(grossScore) || grossScore <= 0) {
-        setCalculation({ type: "error", message: "Enter a valid gross score for every team before calculating." });
+        setCalculation({ type: "error", message: "All team scores must be saved before calculating." });
         return;
       }
       results.push({ teamId: team.id, name: team.name, grossScore, strokesReceived: team.strokesReceived, netScore: grossScore - team.strokesReceived });
@@ -307,6 +355,7 @@ export default function GameLive() {
   };
 
   const confirmHole = async (mode: "winner" | "carry") => {
+    if (!isAdmin) return;
     if (!gameId || !calculation || calculation.type === "error") return;
     if (mode === "winner" && calculation.type !== "winner") return;
     if (mode === "carry" && calculation.type !== "tie") return;
@@ -324,8 +373,6 @@ export default function GameLive() {
       if (updateError) throw updateError;
       if (typeof window !== "undefined") window.localStorage.setItem(currentHoleStorageKey(gameId), String(nextHole));
       setStoredHole(nextHole);
-      setHoleResults((current) => [...current.filter((result) => resultHoleNumber(result) !== liveData.currentHoleNumber && (result.hole_id ?? result.holeId) !== liveData.currentHole.id), ...rows]);
-      setGame((current: any) => ({ ...current, current_hole: nextHole, status: isFinalHole ? "completed" : current?.status ?? "draft" }));
       setGrossScores({});
       setCalculation(null);
       setMessage(mode === "winner" ? "Winner confirmed. Moving to next hole." : "Carry confirmed. Pot moves to next hole.");
@@ -350,6 +397,7 @@ export default function GameLive() {
           <div className="mb-1 flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[var(--gr-turf)]"><span className="live-dot" /> Live Hole</div>
           <h1 className="text-2xl font-black text-[var(--gr-sand)]">{matchName}</h1>
           <div className="text-xs text-[var(--gr-text-muted)] font-mono break-all">{gameId}</div>
+          {!isAdmin && <div className="mt-1 text-xs text-[var(--gr-gold)]">You mark {teamRows.filter((team) => markedTeamIds.includes(team.id)).map((team) => team.name).join(" & ") || "no team assigned"}</div>}
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-xs font-bold text-[var(--gr-text-muted)]">{invite?.role || "player"}</div>
@@ -368,14 +416,29 @@ export default function GameLive() {
       </section>
 
       <section className="grid grid-cols-1 gap-3 mb-4">
-        {scoringRows.map((team, index) => <div key={team.id} className="card mb-0"><div className="flex items-start justify-between gap-3 mb-3"><div><span className={`team-badge team-${(index % 4) + 1}`}>{team.name}</span><div className="mt-2 text-sm text-[var(--gr-text-muted)]">{team.players}</div></div><div className="text-right"><div className="text-xs uppercase text-[var(--gr-text-muted)]">Balance</div><div className={team.balance < 0 ? "text-2xl font-black text-danger" : "text-2xl font-black text-success"}>{money(team.balance)}</div></div></div><div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs"><div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="block text-[var(--gr-text-muted)]">Gross</div><button type="button" className="mt-1 w-full rounded-xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] px-2 py-3 text-center text-xl font-black text-[var(--gr-sand)] outline-none" onClick={() => { setPickerTeam(team); setCustomScore(team.grossInput || ""); }}>{team.grossInput || "Select"}</button><div className="mt-1 text-[var(--gr-gold)]">Net {team.calculatedNet ?? "-"}</div></div><div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Bank</div><div className="text-xl font-black">€{team.baseFunds.toFixed(0)}</div></div><div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Mulligans</div><div className="text-xl font-black">{team.mulligansLeft}</div></div><div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Reverses</div><div className="text-xl font-black">{team.reversesLeft}</div></div></div><div className="flex items-center justify-between text-xs text-[var(--gr-text-muted)] mb-3"><span>Won <b className="text-success">€{team.won.toFixed(0)}</b></span><span>Spent <b className="text-danger">€{team.spent.toFixed(0)}</b></span><span>HCP <b className="text-[var(--gr-sand)]">{team.handicap}</b></span></div><div className="grid grid-cols-2 gap-2"><button className="btn btn-gold" type="button" disabled={saving || team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1)} onClick={() => buyPurchase(team, "mulligan")}>Buy Mulligan €{n(game?.mulligan_price, 50)}</button><button className="btn btn-secondary" type="button" disabled={saving || team.reversesLeft <= 0 || liveData.currentPurchases.some((purchase) => purchaseType(purchase).includes("reverse"))} onClick={() => buyPurchase(team, "reverse")}>Use Reverse €{liveData.currentPot.toFixed(0)}</button></div></div>)}
+        {scoringRows.map((team, index) => (
+          <div key={team.id} className={`card mb-0 ${team.canEditScore ? "" : "opacity-75"}`}>
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div><span className={`team-badge team-${(index % 4) + 1}`}>{team.name}</span><div className="mt-2 text-sm text-[var(--gr-text-muted)]">{team.players}</div><div className="mt-1 text-xs text-[var(--gr-gold)]">Marker: {team.markerName}{team.canEditScore ? " · Editable by you" : " · Read only"}</div></div>
+              <div className="text-right"><div className="text-xs uppercase text-[var(--gr-text-muted)]">Balance</div><div className={team.balance < 0 ? "text-2xl font-black text-danger" : "text-2xl font-black text-success"}>{money(team.balance)}</div></div>
+            </div>
+            <div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs">
+              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="block text-[var(--gr-text-muted)]">Gross</div><button type="button" disabled={!team.canEditScore || saving} className="mt-1 w-full rounded-xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] px-2 py-3 text-center text-xl font-black text-[var(--gr-sand)] outline-none disabled:opacity-50" onClick={() => { setPickerTeam(team); setCustomScore(team.grossInput || ""); }}>{team.grossInput || (team.canEditScore ? "Select" : "Locked")}</button><div className="mt-1 text-[var(--gr-gold)]">Net {team.calculatedNet ?? "-"}</div></div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Bank</div><div className="text-xl font-black">€{team.baseFunds.toFixed(0)}</div></div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Mulligans</div><div className="text-xl font-black">{team.mulligansLeft}</div></div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Reverses</div><div className="text-xl font-black">{team.reversesLeft}</div></div>
+            </div>
+            <div className="flex items-center justify-between text-xs text-[var(--gr-text-muted)] mb-3"><span>Won <b className="text-success">€{team.won.toFixed(0)}</b></span><span>Spent <b className="text-danger">€{team.spent.toFixed(0)}</b></span><span>HCP <b className="text-[var(--gr-sand)]">{team.handicap}</b></span></div>
+            <div className="grid grid-cols-2 gap-2"><button className="btn btn-gold" type="button" disabled={saving || team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1)} onClick={() => buyPurchase(team, "mulligan")}>Buy Mulligan €{n(game?.mulligan_price, 50)}</button><button className="btn btn-secondary" type="button" disabled={saving || team.reversesLeft <= 0 || liveData.currentPurchases.some((purchase) => purchaseType(purchase).includes("reverse"))} onClick={() => buyPurchase(team, "reverse")}>Use Reverse €{liveData.currentPot.toFixed(0)}</button></div>
+          </div>
+        ))}
       </section>
 
-      <section className="card"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Actions</div><div className="font-black">Calculate this hole</div></div><div className="text-right text-xs text-[var(--gr-text-muted)]">Economic impact: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span></div></div>{message && <div className={`mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm font-bold ${message.startsWith("Could not") || message.includes("limit") ? "text-danger" : "text-success"}`}>{message}</div>}{calculation && <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">{calculation.type === "error" && <div className="font-bold text-danger">{calculation.message}</div>}{calculation.type === "winner" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div><div className="text-xl font-black text-success">{calculation.winner.name}</div><div className="text-[var(--gr-text-muted)]">Gross {calculation.winner.grossScore} · Strokes {calculation.winner.strokesReceived} · Net {calculation.winner.netScore}</div></div>}{calculation.type === "tie" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div><div className="text-xl font-black text-[var(--gr-warning)]">{calculation.tiedTeams.map((team) => team.name).join(" vs ")}</div><div className="text-[var(--gr-text-muted)]">Same best net: {calculation.tiedTeams[0]?.netScore}. Push / Carry moves this pot to the next hole.</div></div>}</div>}<div className="grid grid-cols-2 gap-2"><button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving}>Calculate Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !calculation || calculation.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !calculation || calculation.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button></div></section>
+      <section className="card"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Actions</div><div className="font-black">Calculate this hole</div></div><div className="text-right text-xs text-[var(--gr-text-muted)]">Economic impact: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span></div></div>{message && <div className={`mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm font-bold ${message.startsWith("Could not") || message.includes("limit") ? "text-danger" : "text-success"}`}>{message}</div>}{calculation && <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">{calculation.type === "error" && <div className="font-bold text-danger">{calculation.message}</div>}{calculation.type === "winner" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div><div className="text-xl font-black text-success">{calculation.winner.name}</div><div className="text-[var(--gr-text-muted)]">Gross {calculation.winner.grossScore} · Strokes {calculation.winner.strokesReceived} · Net {calculation.winner.netScore}</div></div>}{calculation.type === "tie" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div><div className="text-xl font-black text-[var(--gr-warning)]">{calculation.tiedTeams.map((team) => team.name).join(" vs ")}</div><div className="text-[var(--gr-text-muted)]">Same best net: {calculation.tiedTeams[0]?.netScore}. Push / Carry moves this pot to the next hole.</div></div>}</div>}<div className="grid grid-cols-2 gap-2"><button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving || !isAdmin}>Calculate Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !isAdmin || !calculation || calculation.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !isAdmin || !calculation || calculation.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button></div>{!isAdmin && <div className="mt-3 text-xs text-[var(--gr-text-muted)]">Only admin can calculate and confirm the hole.</div>}</section>
 
       <div className="grid grid-cols-2 gap-2 mb-6"><Link href={`/game/${gameId}/scorecard`} className="btn btn-secondary">Scorecard</Link><Link href={`/game/${gameId}/leaderboard`} className="btn btn-secondary">Leaderboard</Link><Link href={`/game/${gameId}/summary`} className="btn btn-gold col-span-2">View Final Summary</Link></div>
 
-      {pickerTeam && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center"><div className="w-full max-w-md rounded-3xl border border-[var(--gr-border)] bg-[var(--gr-carbon)] p-4 shadow-2xl"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Select result</div><div className="text-xl font-black text-[var(--gr-sand)]">{pickerTeam.name}</div><div className="text-sm text-[var(--gr-text-muted)]">Hole {liveData.currentHoleNumber} · Par {selectedPar}</div></div><button className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-sm font-bold" type="button" onClick={() => setPickerTeam(null)}>Close</button></div><div className="grid grid-cols-2 gap-2">{quickScoreOptions(selectedPar).map((option) => <button key={option.label} type="button" className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] p-3 text-left" onClick={() => { setTeamGrossScore(pickerTeam.id, option.value); setPickerTeam(null); }}><div className="text-base font-black text-[var(--gr-sand)]">{option.label}</div><div className="text-xs text-[var(--gr-text-muted)]">{option.subtitle}</div><div className="mt-1 text-lg font-black text-[var(--gr-gold)]">{option.value}</div></button>)}</div><div className="mt-3 rounded-2xl border border-[var(--gr-border)] p-3"><div className="mb-2 text-sm font-black">Otro resultado</div><div className="flex gap-2"><input type="number" inputMode="numeric" min="1" className="w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-3 py-3 text-lg font-black outline-none" value={customScore} onChange={(event) => setCustomScore(event.target.value)} placeholder="Write score" /><button type="button" className="btn btn-gold whitespace-nowrap" onClick={() => { const value = Number(customScore); if (!Number.isFinite(value) || value <= 0) return; setTeamGrossScore(pickerTeam.id, value); setPickerTeam(null); }}>Set</button></div></div></div></div>}
+      {pickerTeam && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center"><div className="w-full max-w-md rounded-3xl border border-[var(--gr-border)] bg-[var(--gr-carbon)] p-4 shadow-2xl"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Select result</div><div className="text-xl font-black text-[var(--gr-sand)]">{pickerTeam.name}</div><div className="text-sm text-[var(--gr-text-muted)]">Hole {liveData.currentHoleNumber} · Par {selectedPar}</div></div><button className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-sm font-bold" type="button" onClick={() => setPickerTeam(null)}>Close</button></div><div className="grid grid-cols-2 gap-2">{quickScoreOptions(selectedPar).map((option) => <button key={option.label} type="button" className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] p-3 text-left" onClick={() => { saveDraftScore(pickerTeam, option.value); setPickerTeam(null); }}><div className="text-base font-black text-[var(--gr-sand)]">{option.label}</div><div className="text-xs text-[var(--gr-text-muted)]">{option.subtitle}</div><div className="mt-1 text-lg font-black text-[var(--gr-gold)]">{option.value}</div></button>)}</div><div className="mt-3 rounded-2xl border border-[var(--gr-border)] p-3"><div className="mb-2 text-sm font-black">Otro resultado</div><div className="flex gap-2"><input type="number" inputMode="numeric" min="1" className="w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-3 py-3 text-lg font-black outline-none" value={customScore} onChange={(event) => setCustomScore(event.target.value)} placeholder="Write score" /><button type="button" className="btn btn-gold whitespace-nowrap" onClick={() => { const value = Number(customScore); if (!Number.isFinite(value) || value <= 0) return; saveDraftScore(pickerTeam, value); setPickerTeam(null); }}>Set</button></div></div></div></div>}
     </div>
   );
 }
