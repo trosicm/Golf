@@ -27,7 +27,6 @@ export default function AdminResetPage() {
   const [game, setGame] = useState<any>(null);
   const [holeResults, setHoleResults] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
-  const [holes, setHoles] = useState<any[]>([]);
   const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
 
   const loadData = async () => {
@@ -72,11 +71,10 @@ export default function AdminResetPage() {
       return;
     }
 
-    const [gameRes, resultsRes, purchasesRes, holesRes, walletTransactionsRes] = await Promise.all([
+    const [gameRes, resultsRes, purchasesRes, walletTransactionsRes] = await Promise.all([
       supabase.from("games").select("*").eq("id", gameId).maybeSingle(),
       supabase.from("hole_results").select("*").eq("game_id", gameId),
       supabase.from("purchases").select("*").eq("game_id", gameId),
-      supabase.from("holes").select("*").eq("game_id", gameId),
       supabase.from("wallet_transactions").select("*").eq("game_id", gameId),
     ]);
 
@@ -84,7 +82,6 @@ export default function AdminResetPage() {
       ["games", gameRes],
       ["hole_results", resultsRes],
       ["purchases", purchasesRes],
-      ["holes", holesRes],
       ["wallet_transactions", walletTransactionsRes],
     ].find(([, res]: any) => res.error);
 
@@ -97,7 +94,6 @@ export default function AdminResetPage() {
     setGame(gameRes.data);
     setHoleResults(resultsRes.data || []);
     setPurchases(purchasesRes.data || []);
-    setHoles(holesRes.data || []);
     setWalletTransactions(walletTransactionsRes.data || []);
     setLoading(false);
   };
@@ -125,7 +121,7 @@ export default function AdminResetPage() {
     if (!gameId) return;
 
     const ok = window.confirm(
-      "This will delete confirmed hole results, purchases, carries and reset the match to hole 1. Teams and hole setup will stay untouched. Continue?"
+      "This will delete confirmed hole results, purchases, carries and reset the match to hole 1. Wallets and player funds will stay untouched. Continue?"
     );
     if (!ok) return;
 
@@ -136,7 +132,6 @@ export default function AdminResetPage() {
     const steps = [
       async () => supabase.from("purchases").delete().eq("game_id", gameId),
       async () => supabase.from("hole_results").delete().eq("game_id", gameId),
-      async () => supabase.from("wallet_transactions").delete().eq("game_id", gameId),
       async () => supabase.from("holes").update({ carry_in: 0 }).eq("game_id", gameId),
       async () => supabase.from("games").update({ current_hole: 1, status: "in-progress" }).eq("id", gameId),
     ];
@@ -151,7 +146,7 @@ export default function AdminResetPage() {
     }
 
     clearLocalMemory();
-    setSuccess("Progress reset. Match is back to hole 1. Teams and hole setup were kept.");
+    setSuccess("Progress reset. Match is back to hole 1. Wallets and player funds were kept.");
     setSaving(false);
     await loadData();
   };
@@ -211,7 +206,7 @@ export default function AdminResetPage() {
           <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-danger)]">Testing tools</div>
           <h2 className="text-xl font-black">Reset playable progress</h2>
           <p className="mt-2 text-sm text-[var(--gr-text-muted)]">
-            Use this while testing. It deletes progress, but keeps players, teams, invites and hole configuration.
+            Deletes progress only. Teams, players, invites, hole setup, wallets and player funds stay untouched.
           </p>
         </div>
 
@@ -225,7 +220,7 @@ export default function AdminResetPage() {
           <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Browser only</div>
           <h2 className="text-xl font-black">Clear local memory</h2>
           <p className="mt-2 text-sm text-[var(--gr-text-muted)]">
-            This only clears your browser backup memory. It does not delete Supabase results.
+            This only clears your browser backup memory. It does not delete Supabase results or wallets.
           </p>
         </div>
 
