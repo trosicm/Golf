@@ -11,20 +11,13 @@ const DEFAULT_HOLES = [
   [13, 3, 15, 60], [14, 5, 1, 70], [15, 4, 11, 45], [16, 4, 7, 50], [17, 3, 13, 60], [18, 4, 5, 60],
 ].map(([hole_number, par, stroke_index, base_value]) => ({ id: `fallback-${hole_number}`, hole_number, par, stroke_index, base_value }));
 
-const FALLBACK_TEAMS = [
-  { id: "fallback-team-1", name: "Team 1", players: "Player 1 & Player 2", handicap: 10 },
-  { id: "fallback-team-2", name: "Team 2", players: "Player 3 & Player 4", handicap: 12 },
-  { id: "fallback-team-3", name: "Team 3", players: "Player 5 & Player 6", handicap: 14 },
-  { id: "fallback-team-4", name: "Team 4", players: "Player 7 & Player 8", handicap: 16 },
-];
-
-type CalculatedTeamResult = { teamId: string; name: string; grossScore: number; strokesReceived: number; netScore: number };
-type ProvisionalResult =
-  | { type: "winner"; winner: CalculatedTeamResult; results: CalculatedTeamResult[] }
-  | { type: "tie"; tiedTeams: CalculatedTeamResult[]; results: CalculatedTeamResult[] }
+type TeamResult = { teamId: string; name: string; grossScore: number; strokesReceived: number; netScore: number };
+type CalcResult =
+  | { type: "winner"; winner: TeamResult; results: TeamResult[] }
+  | { type: "tie"; tiedTeams: TeamResult[]; results: TeamResult[] }
   | { type: "error"; message: string };
 
-type PickerTeam = { id: string; name: string; grossInput: string; strokesReceived: number; calculatedNet: number | null } | null;
+type PickerTeam = any | null;
 
 const n = (value: any, fallback = 0) => {
   const parsed = Number(value);
@@ -32,16 +25,16 @@ const n = (value: any, fallback = 0) => {
 };
 const money = (value: number) => `${value > 0 ? "+" : value < 0 ? "-" : ""}€${Math.abs(value).toFixed(0)}`;
 const holeNo = (hole: any) => n(hole?.hole_number ?? hole?.number ?? hole?.hole);
-const resultHoleNo = (row: any) => n(row?.hole_number ?? row?.holeNumber ?? row?.number, 0);
 const holeValue = (hole: any) => n(hole?.price ?? hole?.value ?? hole?.hole_value ?? hole?.base_value ?? hole?.baseValue);
 const strokeIndex = (hole: any) => hole?.stroke_index ?? hole?.strokeIndex ?? hole?.si ?? "-";
-const gameTeamId = (row: any) => row?.team_id ?? row?.teamId ?? row?.id;
-const purchaseAmount = (row: any) => n(row?.cost ?? row?.amount ?? row?.value ?? row?.price);
+const teamIdOf = (row: any) => row?.team_id ?? row?.teamId ?? row?.id;
+const playerIdOf = (row: any) => row?.player_id ?? row?.playerId;
+const purchaseAmount = (row: any) => n(row?.amount ?? row?.cost ?? row?.value ?? row?.price);
 const purchaseType = (row: any) => String(row?.type ?? row?.purchase_type ?? row?.kind ?? "").toLowerCase();
-const purchaseTeamId = (row: any) => row?.team_id ?? row?.teamId;
 const purchaseHoleNumber = (row: any) => row?.hole_number ?? row?.holeNumber ?? row?.number;
 const potValue = (row: any) => n(row?.pot_value ?? row?.pot ?? row?.value ?? row?.amount);
-const isWinningResult = (row: any, teamId: string) => row?.is_winner === true || row?.winner === true || row?.winner_team_id === teamId;
+const walletValue = (row: any) => n(row?.current_balance ?? row?.balance ?? row?.starting_balance ?? row?.total ?? row?.amount);
+const isWinner = (row: any, teamId: string) => row?.is_winner === true || row?.winner === true || row?.winner_team_id === teamId;
 
 function teamPlayerIds(team: any) {
   return [team?.player_1_id, team?.player_2_id, team?.player1_id, team?.player2_id, team?.player_a_id, team?.player_b_id].filter(Boolean);
@@ -61,11 +54,11 @@ function mergeHoles(holes: any[]) {
     return saved ? { ...fallback, ...saved } : fallback;
   }).sort((a, b) => holeNo(a) - holeNo(b));
 }
-function currentHoleStorageKey(gameId: any) {
-  return `golf-rivals:${gameId}:current-hole`;
-}
 function safeHole(value: any) {
   return Math.min(18, Math.max(1, n(value, 1)));
+}
+function currentHoleStorageKey(gameId: any) {
+  return `golf-rivals:${gameId}:current-hole`;
 }
 function quickScoreOptions(par: number) {
   return [
@@ -97,11 +90,19 @@ export default function GameLive() {
   const [gameInvites, setGameInvites] = useState<any[]>([]);
   const [holeResults, setHoleResults] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
+  const [wallets, setWallets] = useState<any[]>([]);
   const [grossScores, setGrossScores] = useState<Record<string, string>>({});
-  const [provisionalResult, setProvisionalResult] = useState<ProvisionalResult | null>(null);
+  const [calculation, setCalculation] = useState<CalcResult | null>(null);
   const [storedHole, setStoredHole] = useState(1);
   const [pickerTeam, setPickerTeam] = useState<PickerTeam>(null);
   const [customScore, setCustomScore] = useState("");
+
+  const resultHoleNumber = (row: any) => {
+    const direct = row?.hole_number ?? row?.holeNumber ?? row?.number;
+    if (direct) return n(direct);
+    const holeId = row?.hole_id ?? row?.holeId;
+    return holeNo(holes.find((hole) => hole.id === holeId));
+  };
 
   useEffect(() => {
     if (!gameId || typeof window === "undefined") return;
@@ -112,6 +113,7 @@ export default function GameLive() {
     const fetchData = async () => {
       setLoading(true);
       setError("");
+
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError || !userData?.user) {
         router.push("/auth/login");
@@ -119,21 +121,29 @@ export default function GameLive() {
       }
 
       const email = (userData.user.email || "").trim().toLowerCase();
-      const { data: invites, error: inviteError } = await supabase.from("game_invites").select("*").ilike("email", email).eq("game_id", gameId).limit(1);
+      const { data: invites, error: inviteError } = await supabase
+        .from("game_invites")
+        .select("*")
+        .ilike("email", email)
+        .eq("game_id", gameId)
+        .limit(1);
+
       if (inviteError) {
         setError(`Could not check invitation: ${inviteError.message}`);
         setLoading(false);
         return;
       }
+
       const inviteRow = invites?.[0];
       setInvite(inviteRow);
+
       if (!inviteRow) {
         setError(`You are not invited to this match. Email: ${email}`);
         setLoading(false);
         return;
       }
 
-      const [gameRes, holesRes, gameTeamsRes, teamsRes, playersRes, invitesRes, resultsRes, purchasesRes] = await Promise.all([
+      const [gameRes, holesRes, gameTeamsRes, teamsRes, playersRes, invitesRes, resultsRes, purchasesRes, walletsRes] = await Promise.all([
         supabase.from("games").select("*").eq("id", gameId).maybeSingle(),
         supabase.from("holes").select("*").eq("game_id", gameId),
         supabase.from("game_teams").select("*").eq("game_id", gameId),
@@ -142,9 +152,14 @@ export default function GameLive() {
         supabase.from("game_invites").select("*").eq("game_id", gameId),
         supabase.from("hole_results").select("*").eq("game_id", gameId),
         supabase.from("purchases").select("*").eq("game_id", gameId),
+        supabase.from("game_player_wallets").select("*").eq("game_id", gameId),
       ]);
 
-      const failed = [["games", gameRes], ["holes", holesRes], ["game_teams", gameTeamsRes], ["teams", teamsRes], ["players", playersRes], ["game_invites", invitesRes], ["hole_results", resultsRes], ["purchases", purchasesRes]].find(([, res]: any) => res.error);
+      const failed = [
+        ["games", gameRes], ["holes", holesRes], ["game_teams", gameTeamsRes], ["teams", teamsRes], ["players", playersRes],
+        ["game_invites", invitesRes], ["hole_results", resultsRes], ["purchases", purchasesRes], ["game_player_wallets", walletsRes],
+      ].find(([, res]: any) => res.error);
+
       if (failed) {
         setError(`${failed[0]}: ${(failed[1] as any).error.message}`);
         setLoading(false);
@@ -159,25 +174,26 @@ export default function GameLive() {
       setGameInvites(invitesRes.data || []);
       setHoleResults(resultsRes.data || []);
       setPurchases(purchasesRes.data || []);
+      setWallets(walletsRes.data || []);
       setLoading(false);
     };
+
     fetchData();
   }, [gameId, router]);
 
   const liveData = useMemo(() => {
-    const highestConfirmedHole = holeResults.reduce((max, result) => Math.max(max, resultHoleNo(result)), 0);
+    const highestConfirmedHole = holeResults.reduce((max, result) => Math.max(max, resultHoleNumber(result)), 0);
     const fromResults = highestConfirmedHole > 0 ? highestConfirmedHole + 1 : 1;
     const requested = Math.max(safeHole(game?.current_hole), safeHole(storedHole), safeHole(fromResults));
-    const safeCurrentHole = safeHole(requested);
-    const currentHole = holes.find((hole) => holeNo(hole) === safeCurrentHole) || holes[0] || DEFAULT_HOLES[0];
-    const currentHoleNumber = holeNo(currentHole);
+    const currentHoleNumber = safeHole(requested);
+    const currentHole = holes.find((hole) => holeNo(hole) === currentHoleNumber) || holes[0] || DEFAULT_HOLES[0];
     const currentPurchases = purchases.filter((purchase) => purchaseHoleNumber(purchase) === currentHoleNumber || purchase?.hole_id === currentHole.id);
     const purchaseTotal = currentPurchases.reduce((sum, purchase) => sum + purchaseAmount(purchase), 0);
     const carryIn = n(currentHole?.carry_in ?? currentHole?.carryIn);
     const baseValue = holeValue(currentHole);
     const currentPot = baseValue + carryIn + purchaseTotal;
     const totalPot = holes.reduce((sum, hole) => sum + holeValue(hole), 0) + purchases.reduce((sum, purchase) => sum + purchaseAmount(purchase), 0);
-    return { currentHole, currentHoleNumber, baseValue, carryIn, purchaseTotal, currentPot, totalPot, currentPurchases };
+    return { currentHole, currentHoleNumber, currentPurchases, purchaseTotal, carryIn, baseValue, currentPot, totalPot };
   }, [game, holes, purchases, holeResults, storedHole]);
 
   useEffect(() => {
@@ -186,29 +202,58 @@ export default function GameLive() {
   }, [gameId, liveData.currentHoleNumber]);
 
   const teamRows = useMemo(() => {
-    if (gameTeams.length === 0) return FALLBACK_TEAMS.map((team, index) => ({ ...team, position: index + 1, score: "-", net: "-", holesWon: 0, mulligansLeft: 5, reversesLeft: 2, spent: 0, won: 0, balance: 0, currentHoleMulligans: 0, currentHoleReverses: 0 }));
+    if (gameTeams.length === 0) {
+      return [];
+    }
+
     return gameTeams.map((gameTeam, index) => {
-      const teamId = gameTeamId(gameTeam);
-      const teamRecord = teams.find((team) => team.id === teamId);
-      const fromTeam = teamPlayerIds(teamRecord);
-      const fromInvites = gameInvites.filter((row) => (row.team_id ?? row.teamId) === teamId).map((row) => row.player_id ?? row.playerId).filter(Boolean);
-      const fallbackIds = gameInvites.filter((row) => row.player_id || row.playerId).slice(index * 2, index * 2 + 2).map((row) => row.player_id ?? row.playerId).filter(Boolean);
+      const teamId = teamIdOf(gameTeam);
+      const team = teams.find((item) => item.id === teamId);
+      const fromTeam = teamPlayerIds(team);
+      const fromInvites = gameInvites
+        .filter((item) => (item.team_id ?? item.teamId) === teamId)
+        .map(playerIdOf)
+        .filter(Boolean);
+      const fallbackIds = gameInvites
+        .filter((item) => playerIdOf(item))
+        .slice(index * 2, index * 2 + 2)
+        .map(playerIdOf)
+        .filter(Boolean);
       const playerIds = Array.from(new Set((fromTeam.length ? fromTeam : fromInvites.length ? fromInvites : fallbackIds).filter(Boolean)));
-      const teamResults = holeResults.filter((result) => (result.team_id ?? result.teamId) === teamId);
-      const currentResult = teamResults.find((result) => resultHoleNo(result) === liveData.currentHoleNumber || (result.hole_id ?? result.holeId) === liveData.currentHole.id);
-      const winnerResults = teamResults.filter((result) => isWinningResult(result, teamId));
-      const holesWon = winnerResults.length;
+      const playerNames = playerIds.map((id) => playerName(players.find((player) => player.id === id))).filter(Boolean);
+      const teamResults = holeResults.filter((result) => teamIdOf(result) === teamId);
+      const currentResult = teamResults.find((result) => resultHoleNumber(result) === liveData.currentHoleNumber || (result.hole_id ?? result.holeId) === liveData.currentHole.id);
+      const winnerResults = teamResults.filter((result) => isWinner(result, teamId));
       const won = winnerResults.reduce((sum, result) => sum + potValue(result), 0);
-      const teamPurchases = purchases.filter((purchase) => purchaseTeamId(purchase) === teamId || playerIds.includes(purchase.player_id ?? purchase.playerId));
+      const teamPurchases = purchases.filter((purchase) => purchaseTeamId(purchase) === teamId || playerIds.includes(playerIdOf(purchase)));
       const spent = teamPurchases.reduce((sum, purchase) => sum + purchaseAmount(purchase), 0);
+      const baseFunds = wallets
+        .filter((wallet) => (wallet.team_id ?? wallet.teamId) === teamId || playerIds.includes(playerIdOf(wallet)))
+        .reduce((sum, wallet) => sum + walletValue(wallet), 0);
       const mulligansUsed = teamPurchases.filter((purchase) => purchaseType(purchase).includes("mulligan") && !purchaseType(purchase).includes("reverse")).length;
       const reversesUsed = teamPurchases.filter((purchase) => purchaseType(purchase).includes("reverse")).length;
       const currentHoleMulligans = teamPurchases.filter((purchase) => purchaseHoleNumber(purchase) === liveData.currentHoleNumber && purchaseType(purchase).includes("mulligan") && !purchaseType(purchase).includes("reverse")).length;
       const currentHoleReverses = teamPurchases.filter((purchase) => purchaseHoleNumber(purchase) === liveData.currentHoleNumber && purchaseType(purchase).includes("reverse")).length;
-      const playerNames = playerIds.map((id) => playerName(players.find((player) => player.id === id))).filter(Boolean);
-      return { id: teamId, position: index + 1, name: teamRecord?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", handicap: teamRecord?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-", score: currentResult?.gross ?? currentResult?.gross_score ?? currentResult?.score ?? "-", net: currentResult?.net ?? currentResult?.net_score ?? "-", holesWon, mulligansLeft: Math.max(0, n(game?.max_mulligans_per_team, 5) - mulligansUsed), reversesLeft: Math.max(0, n(game?.max_reverses_per_team, 2) - reversesUsed), currentHoleMulligans, currentHoleReverses, spent, won, balance: won - spent };
+
+      return {
+        id: teamId,
+        name: team?.name || `Team ${index + 1}`,
+        players: playerNames.length ? playerNames.join(" & ") : "Players pending",
+        handicap: team?.combined_handicap ?? gameTeam.handicap ?? gameTeam.hcp ?? "-",
+        score: currentResult?.gross_score ?? currentResult?.gross ?? currentResult?.score ?? "-",
+        net: currentResult?.net_score ?? currentResult?.net ?? "-",
+        baseFunds,
+        won,
+        spent,
+        balance: baseFunds + won - spent,
+        holesWon: winnerResults.length,
+        mulligansLeft: Math.max(0, n(game?.max_mulligans_per_team, 5) - mulligansUsed),
+        reversesLeft: Math.max(0, n(game?.max_reverses_per_team, 2) - reversesUsed),
+        currentHoleMulligans,
+        currentHoleReverses,
+      };
     });
-  }, [gameTeams, teams, players, gameInvites, holeResults, purchases, liveData, game]);
+  }, [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets, liveData, game]);
 
   const scoringRows = useMemo(() => {
     const si = strokeIndex(liveData.currentHole);
@@ -223,13 +268,13 @@ export default function GameLive() {
 
   useEffect(() => {
     setGrossScores({});
-    setProvisionalResult(null);
+    setCalculation(null);
     setMessage("");
   }, [liveData.currentHoleNumber]);
 
   const setTeamGrossScore = (teamId: string, score: number | string) => {
     setGrossScores((current) => ({ ...current, [teamId]: String(score) }));
-    setProvisionalResult(null);
+    setCalculation(null);
     setMessage("");
   };
 
@@ -237,43 +282,56 @@ export default function GameLive() {
     const variants = [rows, ...fallbacks.map((fn) => rows.map(fn))];
     let lastError: any = null;
     for (const variant of variants) {
-      const { error: insertError } = await supabase.from(table).insert(variant);
-      if (!insertError) return;
-      lastError = insertError;
+      const { error } = await supabase.from(table).insert(variant);
+      if (!error) return;
+      lastError = error;
     }
     throw lastError;
   };
 
   const calculateWinner = () => {
-    const results: CalculatedTeamResult[] = [];
+    const results: TeamResult[] = [];
     for (const team of scoringRows) {
       const grossScore = Number(team.grossInput);
       if (team.grossInput === "" || !Number.isFinite(grossScore) || grossScore <= 0) {
-        setProvisionalResult({ type: "error", message: "Enter a valid gross score for every team before calculating." });
+        setCalculation({ type: "error", message: "Enter a valid gross score for every team before calculating." });
         return;
       }
       results.push({ teamId: team.id, name: team.name, grossScore, strokesReceived: team.strokesReceived, netScore: grossScore - team.strokesReceived });
     }
+
     const bestNet = Math.min(...results.map((result) => result.netScore));
     const tiedTeams = results.filter((result) => result.netScore === bestNet);
-    setProvisionalResult(tiedTeams.length === 1 ? { type: "winner", winner: tiedTeams[0], results } : { type: "tie", tiedTeams, results });
+    setCalculation(tiedTeams.length === 1 ? { type: "winner", winner: tiedTeams[0], results } : { type: "tie", tiedTeams, results });
   };
 
   const buyPurchase = async (team: any, type: "mulligan" | "reverse") => {
     if (!gameId || saving) return;
     const reverseUsedThisHole = liveData.currentPurchases.some((purchase) => purchaseType(purchase).includes("reverse"));
-    if (type === "mulligan" && (team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1))) { setMessage("Mulligan limit reached for this team."); return; }
-    if (type === "reverse" && (team.reversesLeft <= 0 || reverseUsedThisHole || team.currentHoleReverses >= 1)) { setMessage("Reverse limit reached for this hole."); return; }
-    setSaving(true); setMessage("");
+    if (type === "mulligan" && (team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1))) {
+      setMessage("Mulligan limit reached for this team.");
+      return;
+    }
+    if (type === "reverse" && (team.reversesLeft <= 0 || reverseUsedThisHole || team.currentHoleReverses >= 1)) {
+      setMessage("Reverse limit reached for this hole.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
     try {
       const amount = type === "mulligan" ? n(game?.mulligan_price, 50) : liveData.currentPot;
       const row = { game_id: gameId, hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id, hole_number: liveData.currentHoleNumber, team_id: team.id, type, purchase_type: type, amount, cost: amount, value: amount };
-      await insertWithFallback("purchases", [row], [({ purchase_type, value, ...rest }) => rest, ({ hole_id, purchase_type, value, ...rest }) => rest, ({ hole_id, type: _type, purchase_type, value, ...rest }) => rest]);
+      await insertWithFallback("purchases", [row], [
+        ({ purchase_type, value, ...rest }) => rest,
+        ({ hole_id, purchase_type, value, ...rest }) => rest,
+        ({ hole_id, type: _type, purchase_type, value, ...rest }) => rest,
+      ]);
       setPurchases((current) => [...current, row]);
-      setProvisionalResult(null);
+      setCalculation(null);
       setMessage(type === "mulligan" ? `Mulligan added: ${team.name} +€${amount}` : `Reverse added: ${team.name} +€${amount}`);
-    } catch (purchaseError: any) {
-      setMessage(`Could not add purchase: ${purchaseError?.message || "Unknown Supabase error"}`);
+    } catch (err: any) {
+      setMessage(`Could not add purchase: ${err?.message || "Unknown Supabase error"}`);
     } finally {
       setSaving(false);
     }
@@ -289,29 +347,57 @@ export default function GameLive() {
   };
 
   const confirmHole = async (mode: "winner" | "carry") => {
-    if (!gameId || !provisionalResult || provisionalResult.type === "error") return;
-    if (mode === "winner" && provisionalResult.type !== "winner") return;
-    if (mode === "carry" && provisionalResult.type !== "tie") return;
-    setSaving(true); setMessage("");
+    if (!gameId || !calculation || calculation.type === "error") return;
+    if (mode === "winner" && calculation.type !== "winner") return;
+    if (mode === "carry" && calculation.type !== "tie") return;
+
+    setSaving(true);
+    setMessage("");
     try {
-      const winnerTeamId = provisionalResult.type === "winner" ? provisionalResult.winner.teamId : null;
+      const winnerTeamId = calculation.type === "winner" ? calculation.winner.teamId : null;
       const nextHole = Math.min(18, liveData.currentHoleNumber + 1);
       const isFinalHole = liveData.currentHoleNumber >= 18;
       await clearExistingHoleResults();
-      const rows = provisionalResult.results.map((result) => ({ game_id: gameId, hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id, hole_number: liveData.currentHoleNumber, team_id: result.teamId, gross_score: result.grossScore, gross: result.grossScore, score: result.grossScore, strokes_received: result.strokesReceived, net_score: result.netScore, net: result.netScore, is_winner: winnerTeamId === result.teamId, is_tied: provisionalResult.type === "tie", result_type: provisionalResult.type === "winner" ? "winner" : "carry", pot_value: liveData.currentPot }));
-      await insertWithFallback("hole_results", rows, [({ hole_number, gross_score, net_score, result_type, is_tied, pot_value, ...row }) => row, ({ hole_number, gross_score, gross, net_score, result_type, is_tied, pot_value, ...row }) => row, ({ hole_number, hole_id, gross_score, gross, net_score, net, result_type, is_tied, pot_value, strokes_received, ...row }) => row]);
-      if (mode === "carry" && !isFinalHole) await supabase.from("holes").update({ carry_in: liveData.currentPot }).eq("game_id", gameId).eq("hole_number", nextHole);
-      const { error: gameUpdateError } = await supabase.from("games").update({ current_hole: nextHole, status: isFinalHole ? "completed" : game?.status ?? "draft" }).eq("id", gameId);
-      if (gameUpdateError) throw gameUpdateError;
+
+      const rows = calculation.results.map((result) => ({
+        game_id: gameId,
+        hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id,
+        hole_number: liveData.currentHoleNumber,
+        team_id: result.teamId,
+        gross_score: result.grossScore,
+        gross: result.grossScore,
+        score: result.grossScore,
+        strokes_received: result.strokesReceived,
+        net_score: result.netScore,
+        net: result.netScore,
+        is_winner: winnerTeamId === result.teamId,
+        is_tied: calculation.type === "tie",
+        result_type: calculation.type === "winner" ? "winner" : "carry",
+        pot_value: liveData.currentPot,
+      }));
+
+      await insertWithFallback("hole_results", rows, [
+        ({ hole_number, gross_score, net_score, result_type, is_tied, pot_value, ...row }) => row,
+        ({ hole_number, gross_score, gross, net_score, result_type, is_tied, pot_value, ...row }) => row,
+        ({ hole_number, hole_id, gross_score, gross, net_score, net, result_type, is_tied, pot_value, strokes_received, ...row }) => row,
+      ]);
+
+      if (mode === "carry" && !isFinalHole) {
+        await supabase.from("holes").update({ carry_in: liveData.currentPot }).eq("game_id", gameId).eq("hole_number", nextHole);
+      }
+
+      const { error: updateError } = await supabase.from("games").update({ current_hole: nextHole, status: isFinalHole ? "completed" : game?.status ?? "draft" }).eq("id", gameId);
+      if (updateError) throw updateError;
+
       if (typeof window !== "undefined") window.localStorage.setItem(currentHoleStorageKey(gameId), String(nextHole));
       setStoredHole(nextHole);
-      setHoleResults((current) => [...current.filter((result) => (result.hole_number ?? result.holeNumber ?? result.number) !== liveData.currentHoleNumber && (result.hole_id ?? result.holeId) !== liveData.currentHole.id), ...rows]);
+      setHoleResults((current) => [...current.filter((result) => resultHoleNumber(result) !== liveData.currentHoleNumber && (result.hole_id ?? result.holeId) !== liveData.currentHole.id), ...rows]);
       setGame((current: any) => ({ ...current, current_hole: nextHole, status: isFinalHole ? "completed" : current?.status ?? "draft" }));
-      setMessage(mode === "winner" ? "Winner confirmed. Moving to next hole." : "Carry confirmed. Pot moves to next hole.");
       setGrossScores({});
-      setProvisionalResult(null);
-    } catch (confirmError: any) {
-      setMessage(`Could not confirm hole: ${confirmError?.message || "Unknown Supabase error"}`);
+      setCalculation(null);
+      setMessage(mode === "winner" ? "Winner confirmed. Moving to next hole." : "Carry confirmed. Pot moves to next hole.");
+    } catch (err: any) {
+      setMessage(`Could not confirm hole: ${err?.message || "Unknown Supabase error"}`);
     } finally {
       setSaving(false);
     }
@@ -321,6 +407,7 @@ export default function GameLive() {
 
   if (loading) return <div className="p-4">Loading live match...</div>;
   if (error) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
+
   const matchName = game?.name ?? game?.data?.name ?? game?.data?.title ?? "Skins por Hoyos - Villamartin";
 
   return (
@@ -353,28 +440,26 @@ export default function GameLive() {
           <div key={team.id} className="card mb-0">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div><span className={`team-badge team-${(index % 4) + 1}`}>{team.name}</span><div className="mt-2 text-sm text-[var(--gr-text-muted)]">{team.players}</div></div>
-              <div className="text-right"><div className="text-xs uppercase text-[var(--gr-text-muted)]">Balance</div><div className={Number(team.balance) < 0 ? "text-2xl font-black text-danger" : "text-2xl font-black text-success"}>{money(Number(team.balance || 0))}</div></div>
+              <div className="text-right"><div className="text-xs uppercase text-[var(--gr-text-muted)]">Balance</div><div className={team.balance < 0 ? "text-2xl font-black text-danger" : "text-2xl font-black text-success"}>{money(team.balance)}</div></div>
             </div>
+
             <div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs">
               <div className="rounded-xl border border-[var(--gr-border)] p-3">
                 <div className="block text-[var(--gr-text-muted)]">Gross</div>
-                <button
-                  type="button"
-                  className="mt-1 w-full rounded-xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] px-2 py-3 text-center text-xl font-black text-[var(--gr-sand)] outline-none"
-                  onClick={() => {
-                    setPickerTeam(team);
-                    setCustomScore(team.grossInput || "");
-                  }}
-                >
-                  {team.grossInput || "Select"}
-                </button>
+                <button type="button" className="mt-1 w-full rounded-xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] px-2 py-3 text-center text-xl font-black text-[var(--gr-sand)] outline-none" onClick={() => { setPickerTeam(team); setCustomScore(team.grossInput || ""); }}>{team.grossInput || "Select"}</button>
                 <div className="mt-1 text-[var(--gr-gold)]">Net {team.calculatedNet ?? "-"}</div>
               </div>
-              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Strokes</div><div className="text-xl font-black">{team.strokesReceived}</div><div className="text-[var(--gr-gold)]">HCP {team.handicap}</div></div>
-              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Mulligans</div><div className="text-xl font-black">{team.mulligansLeft}</div><div className="text-[var(--gr-gold)]">1 / hole</div></div>
-              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Reverses</div><div className="text-xl font-black">{team.reversesLeft}</div><div className="text-[var(--gr-gold)]">1 / hole</div></div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Bank</div><div className="text-xl font-black">€{team.baseFunds.toFixed(0)}</div></div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Mulligans</div><div className="text-xl font-black">{team.mulligansLeft}</div></div>
+              <div className="rounded-xl border border-[var(--gr-border)] p-3"><div className="text-[var(--gr-text-muted)]">Reverses</div><div className="text-xl font-black">{team.reversesLeft}</div></div>
             </div>
-            <div className="flex items-center justify-between text-xs text-[var(--gr-text-muted)] mb-3"><span>Spent <b className="text-danger">€{Number(team.spent || 0).toFixed(0)}</b></span><span>Won <b className="text-success">€{Number(team.won || 0).toFixed(0)}</b></span><span>Previous <b className="text-[var(--gr-sand)]">{team.score} / {team.net}</b></span></div>
+
+            <div className="flex items-center justify-between text-xs text-[var(--gr-text-muted)] mb-3">
+              <span>Won <b className="text-success">€{team.won.toFixed(0)}</b></span>
+              <span>Spent <b className="text-danger">€{team.spent.toFixed(0)}</b></span>
+              <span>HCP <b className="text-[var(--gr-sand)]">{team.handicap}</b></span>
+            </div>
+
             <div className="grid grid-cols-2 gap-2"><button className="btn btn-gold" type="button" disabled={saving || team.mulligansLeft <= 0 || team.currentHoleMulligans >= n(game?.max_mulligans_per_team_per_hole, 1)} onClick={() => buyPurchase(team, "mulligan")}>Buy Mulligan €{n(game?.mulligan_price, 50)}</button><button className="btn btn-secondary" type="button" disabled={saving || team.reversesLeft <= 0 || liveData.currentPurchases.some((purchase) => purchaseType(purchase).includes("reverse"))} onClick={() => buyPurchase(team, "reverse")}>Use Reverse €{liveData.currentPot.toFixed(0)}</button></div>
           </div>
         ))}
@@ -383,71 +468,13 @@ export default function GameLive() {
       <section className="card">
         <div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Actions</div><div className="font-black">Calculate this hole</div></div><div className="text-right text-xs text-[var(--gr-text-muted)]">Economic impact: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span></div></div>
         {message && <div className={`mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm font-bold ${message.startsWith("Could not") || message.includes("limit") ? "text-danger" : "text-success"}`}>{message}</div>}
-        {provisionalResult && <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">{provisionalResult.type === "error" && <div className="font-bold text-danger">{provisionalResult.message}</div>}{provisionalResult.type === "winner" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div><div className="text-xl font-black text-success">{provisionalResult.winner.name}</div><div className="text-[var(--gr-text-muted)]">Gross {provisionalResult.winner.grossScore} · Strokes {provisionalResult.winner.strokesReceived} · Net {provisionalResult.winner.netScore}</div></div>}{provisionalResult.type === "tie" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div><div className="text-xl font-black text-[var(--gr-warning)]">{provisionalResult.tiedTeams.map((team) => team.name).join(" vs ")}</div><div className="text-[var(--gr-text-muted)]">Same best net: {provisionalResult.tiedTeams[0]?.netScore}. Push / Carry moves this pot to the next hole.</div></div>}</div>}
-        <div className="grid grid-cols-2 gap-2"><button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving}>Calculate Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !provisionalResult || provisionalResult.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !provisionalResult || provisionalResult.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button></div>
+        {calculation && <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">{calculation.type === "error" && <div className="font-bold text-danger">{calculation.message}</div>}{calculation.type === "winner" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div><div className="text-xl font-black text-success">{calculation.winner.name}</div><div className="text-[var(--gr-text-muted)]">Gross {calculation.winner.grossScore} · Strokes {calculation.winner.strokesReceived} · Net {calculation.winner.netScore}</div></div>}{calculation.type === "tie" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div><div className="text-xl font-black text-[var(--gr-warning)]">{calculation.tiedTeams.map((team) => team.name).join(" vs ")}</div><div className="text-[var(--gr-text-muted)]">Same best net: {calculation.tiedTeams[0]?.netScore}. Push / Carry moves this pot to the next hole.</div></div>}</div>}
+        <div className="grid grid-cols-2 gap-2"><button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving}>Calculate Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !calculation || calculation.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !calculation || calculation.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button></div>
       </section>
 
       <div className="grid grid-cols-2 gap-2 mb-6"><Link href={`/game/${gameId}/scorecard`} className="btn btn-secondary">Scorecard</Link><Link href={`/game/${gameId}/leaderboard`} className="btn btn-secondary">Leaderboard</Link><Link href={`/game/${gameId}/summary`} className="btn btn-gold col-span-2">View Final Summary</Link></div>
 
-      {pickerTeam && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center">
-          <div className="w-full max-w-md rounded-3xl border border-[var(--gr-border)] bg-[var(--gr-carbon)] p-4 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Select result</div>
-                <div className="text-xl font-black text-[var(--gr-sand)]">{pickerTeam.name}</div>
-                <div className="text-sm text-[var(--gr-text-muted)]">Hole {liveData.currentHoleNumber} · Par {selectedPar}</div>
-              </div>
-              <button className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-sm font-bold" type="button" onClick={() => setPickerTeam(null)}>Close</button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              {quickScoreOptions(selectedPar).map((option) => (
-                <button
-                  key={option.label}
-                  type="button"
-                  className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] p-3 text-left"
-                  onClick={() => {
-                    setTeamGrossScore(pickerTeam.id, option.value);
-                    setPickerTeam(null);
-                  }}
-                >
-                  <div className="text-base font-black text-[var(--gr-sand)]">{option.label}</div>
-                  <div className="text-xs text-[var(--gr-text-muted)]">{option.subtitle}</div>
-                  <div className="mt-1 text-lg font-black text-[var(--gr-gold)]">{option.value}</div>
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-3 rounded-2xl border border-[var(--gr-border)] p-3">
-              <div className="mb-2 text-sm font-black">Otro resultado</div>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  className="w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-3 py-3 text-lg font-black outline-none"
-                  value={customScore}
-                  onChange={(event) => setCustomScore(event.target.value)}
-                  placeholder="Write score"
-                />
-                <button
-                  type="button"
-                  className="btn btn-gold whitespace-nowrap"
-                  onClick={() => {
-                    const value = Number(customScore);
-                    if (!Number.isFinite(value) || value <= 0) return;
-                    setTeamGrossScore(pickerTeam.id, value);
-                    setPickerTeam(null);
-                  }}
-                >
-                  Set
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {pickerTeam && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center"><div className="w-full max-w-md rounded-3xl border border-[var(--gr-border)] bg-[var(--gr-carbon)] p-4 shadow-2xl"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Select result</div><div className="text-xl font-black text-[var(--gr-sand)]">{pickerTeam.name}</div><div className="text-sm text-[var(--gr-text-muted)]">Hole {liveData.currentHoleNumber} · Par {n(liveData.currentHole?.par, 4)}</div></div><button className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-sm font-bold" type="button" onClick={() => setPickerTeam(null)}>Close</button></div><div className="grid grid-cols-2 gap-2">{quickScoreOptions(n(liveData.currentHole?.par, 4)).map((option) => <button key={option.label} type="button" className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] p-3 text-left" onClick={() => { setTeamGrossScore(pickerTeam.id, option.value); setPickerTeam(null); }}><div className="text-base font-black text-[var(--gr-sand)]">{option.label}</div><div className="text-xs text-[var(--gr-text-muted)]">{option.subtitle}</div><div className="mt-1 text-lg font-black text-[var(--gr-gold)]">{option.value}</div></button>)}</div><div className="mt-3 rounded-2xl border border-[var(--gr-border)] p-3"><div className="mb-2 text-sm font-black">Otro resultado</div><div className="flex gap-2"><input type="number" inputMode="numeric" min="1" className="w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-3 py-3 text-lg font-black outline-none" value={customScore} onChange={(event) => setCustomScore(event.target.value)} placeholder="Write score" /><button type="button" className="btn btn-gold whitespace-nowrap" onClick={() => { const value = Number(customScore); if (!Number.isFinite(value) || value <= 0) return; setTeamGrossScore(pickerTeam.id, value); setPickerTeam(null); }}>Set</button></div></div></div></div>}
     </div>
   );
 }
