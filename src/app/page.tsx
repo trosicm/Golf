@@ -15,10 +15,8 @@ export default function Home() {
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(198,161,91,0.18),transparent_24rem),radial-gradient(circle_at_bottom_right,rgba(95,163,106,0.16),transparent_28rem)]" />
       <div className="pointer-events-none absolute left-1/2 top-8 -z-10 h-72 w-72 -translate-x-1/2 rounded-full bg-[rgba(198,161,91,0.08)] blur-3xl" />
 
-      <section className="flex w-full max-w-5xl flex-1 flex-col items-center justify-center">
-        <div className="mb-8 w-full max-w-4xl rounded-[2rem] border border-[rgba(198,161,91,0.18)] bg-[rgba(8,18,16,0.38)] p-3 shadow-2xl backdrop-blur-xl sm:p-5">
-          <Logo variant="primary" size="xl" priority className="mx-auto w-full drop-shadow-2xl" />
-        </div>
+      <section className="flex w-full max-w-6xl flex-1 flex-col items-center justify-center">
+        <Logo variant="primary" size="hero" priority className="mb-10 w-full max-w-5xl drop-shadow-2xl" />
 
         <Badge variant="gold" className="mb-4">Every Hole Has a Price.</Badge>
         <h1 className="mb-4 max-w-3xl text-4xl font-black tracking-tight text-[var(--gr-sand)] sm:text-6xl">
