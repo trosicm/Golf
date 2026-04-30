@@ -11,43 +11,56 @@ const UserMenu = dynamic(() => import("./components/UserMenu"), { ssr: false });
 
 export default function Home() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen py-10 px-2 bg-gradient-to-br from-[var(--gr-carbon)] to-[var(--gr-midnight)]">
-      {/* Hero */}
-      <div className="flex flex-col items-center mb-8 w-full">
-        <Logo variant="primary" size="xl" priority className="mx-auto mb-4 drop-shadow-lg" />
-        <h1 className="text-4xl font-extrabold tracking-tight mb-2 text-[var(--gr-sand)] text-center">Golf Rivals</h1>
-        <Badge variant="gold" className="mb-3">Every Hole Has a Price.</Badge>
-        <p className="text-base text-[var(--gr-text-muted)] mb-6 text-center max-w-xs">Play smart. Win the hole.<br />Premium live golf competition for friends. Skins, pots, mulligans, reverse, and real rivalry.</p>
-        <Link href="/app" className="w-full max-w-xs mb-3">
-          <Button size="lg" variant="primary" className="w-full">Open Match Dashboard</Button>
-        </Link>
-        <UserMenu />
-      </div>
+    <div className="relative flex min-h-screen flex-col items-center overflow-hidden px-4 py-10 text-center">
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(198,161,91,0.18),transparent_24rem),radial-gradient(circle_at_bottom_right,rgba(95,163,106,0.16),transparent_28rem)]" />
+      <div className="pointer-events-none absolute left-1/2 top-8 -z-10 h-72 w-72 -translate-x-1/2 rounded-full bg-[rgba(198,161,91,0.08)] blur-3xl" />
 
-      {/* Features */}
-      <div className="grid grid-cols-1 gap-4 w-full max-w-md mb-4">
+      <section className="flex w-full max-w-5xl flex-1 flex-col items-center justify-center">
+        <div className="mb-8 w-full max-w-4xl rounded-[2rem] border border-[rgba(198,161,91,0.18)] bg-[rgba(8,18,16,0.38)] p-3 shadow-2xl backdrop-blur-xl sm:p-5">
+          <Logo variant="primary" size="xl" priority className="mx-auto w-full drop-shadow-2xl" />
+        </div>
+
+        <Badge variant="gold" className="mb-4">Every Hole Has a Price.</Badge>
+        <h1 className="mb-4 max-w-3xl text-4xl font-black tracking-tight text-[var(--gr-sand)] sm:text-6xl">
+          Premium golf bets for friends with too much pride.
+        </h1>
+        <p className="mb-8 max-w-xl text-base leading-7 text-[var(--gr-text-muted)] sm:text-lg">
+          Skins, pots, mulligans, reverse mulligans, side bets, live balances and a scoreboard that makes every hole matter.
+        </p>
+
+        <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
+          <Link href="/app" className="flex-1">
+            <Button size="lg" variant="primary" className="w-full">Open Match Dashboard</Button>
+          </Link>
+          <div className="flex-1">
+            <UserMenu />
+          </div>
+        </div>
+      </section>
+
+      <section className="grid w-full max-w-5xl grid-cols-1 gap-4 pb-4 md:grid-cols-3">
         <Card variant="gold">
           <div className="flex items-center gap-3">
             <Badge variant="gold">Live</Badge>
-            <span className="font-semibold text-[var(--gr-sand)]">Live match tracking</span>
+            <span className="font-black text-[var(--gr-sand)]">Match tracking</span>
           </div>
-          <p className="text-sm text-[var(--gr-text-muted)] mt-1">Score every hole, see pots and balances update in real time.</p>
+          <p className="mt-2 text-sm text-[var(--gr-text-muted)]">Scores, pots and balances update as the round moves hole by hole.</p>
         </Card>
         <Card variant="turf">
           <div className="flex items-center gap-3">
             <Badge variant="turf">Mulligans</Badge>
             <Badge variant="danger">Reverse</Badge>
           </div>
-          <p className="text-sm text-[var(--gr-text-muted)] mt-1">Strategic use of mulligans and reverse mulligans for extra tension.</p>
+          <p className="mt-2 text-sm text-[var(--gr-text-muted)]">Add tactical chaos without losing control of the real money logic.</p>
         </Card>
         <Card>
           <div className="flex items-center gap-3">
             <Badge variant="gold">Pot</Badge>
-            <Badge variant="neutral">Balances</Badge>
+            <Badge variant="neutral">Rivalry</Badge>
           </div>
-          <p className="text-sm text-[var(--gr-text-muted)] mt-1">Track the money at stake and team balances hole by hole.</p>
+          <p className="mt-2 text-sm text-[var(--gr-text-muted)]">Every carry, side bet and mistake stays visible. No excuses after the 18th.</p>
         </Card>
-      </div>
+      </section>
     </div>
   );
 }
