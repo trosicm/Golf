@@ -49,20 +49,21 @@ function ExitIcon({ className }: IconProps) {
   return <Svg className={className}><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M21 3v18" /></Svg>;
 }
 
+type MenuItem = {
+  label: string;
+  href?: string;
+  icon: (props: IconProps) => React.ReactElement;
+  danger?: boolean;
+  active?: boolean;
+  disabled?: boolean;
+  onClick?: () => void | Promise<void>;
+};
+
 export default function GameTopMenu({ gameId }: GameTopMenuProps) {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-
-  const navItems = [
-    { label: "Dashboard", href: "/app", icon: DashboardIcon },
-    { label: "Match", href: `/game/${gameId}`, icon: MatchIcon },
-    { label: "Bets", href: `/game/${gameId}/bets`, icon: BetsIcon },
-    { label: "Scorecard", href: `/game/${gameId}/scorecard`, icon: ScorecardIcon },
-    { label: "Leaderboard", href: `/game/${gameId}/leaderboard`, icon: TrophyIcon },
-    { label: "Admin", href: `/game/${gameId}/admin`, icon: AdminIcon },
-  ];
 
   const refresh = () => {
     setOpen(false);
@@ -75,6 +76,17 @@ export default function GameTopMenu({ gameId }: GameTopMenuProps) {
     setOpen(false);
     router.push("/auth/login");
   };
+
+  const menuItems: MenuItem[] = [
+    { label: "Admin", href: `/game/${gameId}/admin`, icon: AdminIcon, active: pathname === `/game/${gameId}/admin` },
+    { label: "Bets", href: `/game/${gameId}/bets`, icon: BetsIcon, active: pathname === `/game/${gameId}/bets` },
+    { label: "Dashboard", href: "/app", icon: DashboardIcon, active: pathname === "/app" },
+    { label: "Leaderboard", href: `/game/${gameId}/leaderboard`, icon: TrophyIcon, active: pathname === `/game/${gameId}/leaderboard` },
+    { label: "Match", href: `/game/${gameId}`, icon: MatchIcon, active: pathname === `/game/${gameId}` },
+    { label: "Refresh", icon: RefreshIcon, onClick: refresh },
+    { label: "Scorecard", href: `/game/${gameId}/scorecard`, icon: ScorecardIcon, active: pathname === `/game/${gameId}/scorecard` },
+    { label: signingOut ? "Signing out..." : "Sign out", icon: ExitIcon, onClick: signOut, danger: true, disabled: signingOut },
+  ];
 
   return (
     <div className="fixed right-3 top-3 z-50">
@@ -92,31 +104,36 @@ export default function GameTopMenu({ gameId }: GameTopMenuProps) {
         <>
           <button aria-label="Close game menu" className="fixed inset-0 -z-10 cursor-default bg-transparent" onClick={() => setOpen(false)} />
           <div className="mt-2 w-64 overflow-hidden rounded-3xl border border-[var(--gr-border)] bg-[rgba(8,18,16,0.98)] p-2 shadow-2xl backdrop-blur-xl">
-            <div className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-[var(--gr-gold)]">Golf Rivals</div>
-            {navItems.map((item) => {
+            <div className="mb-1 rounded-2xl border border-[rgba(198,161,91,0.22)] bg-[rgba(198,161,91,0.08)] px-3 py-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--gr-gold)]">Menu</div>
+              <div className="mt-1 text-sm font-black text-[var(--gr-sand)]">Golf Rivals</div>
+            </div>
+            {menuItems.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.href;
+              const baseClass = `mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-black transition disabled:opacity-50 ${
+                item.active
+                  ? "bg-[var(--gr-gold)] text-[var(--gr-carbon)]"
+                  : item.danger
+                    ? "text-[var(--gr-danger)] hover:bg-[rgba(201,92,74,0.12)]"
+                    : "text-[var(--gr-sand)] hover:bg-[rgba(239,232,218,0.08)]"
+              }`;
+
+              if (item.href) {
+                return (
+                  <Link key={item.label} href={item.href} onClick={() => setOpen(false)} className={baseClass}>
+                    <Icon className="h-5 w-5 shrink-0" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              }
+
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setOpen(false)}
-                  className={`mb-1 flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-black transition ${active ? "bg-[var(--gr-gold)] text-[var(--gr-carbon)]" : "text-[var(--gr-sand)] hover:bg-[rgba(239,232,218,0.08)]"}`}
-                >
+                <button key={item.label} type="button" onClick={item.onClick} disabled={item.disabled} className={baseClass}>
                   <Icon className="h-5 w-5 shrink-0" />
                   <span>{item.label}</span>
-                </Link>
+                </button>
               );
             })}
-            <div className="my-2 h-px bg-[var(--gr-border)]" />
-            <button type="button" onClick={refresh} className="mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-black text-[var(--gr-sand)] transition hover:bg-[rgba(239,232,218,0.08)]">
-              <RefreshIcon className="h-5 w-5 shrink-0" />
-              <span>Refresh</span>
-            </button>
-            <button type="button" onClick={signOut} disabled={signingOut} className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-black text-[var(--gr-danger)] transition hover:bg-[rgba(201,92,74,0.12)] disabled:opacity-50">
-              <ExitIcon className="h-5 w-5 shrink-0" />
-              <span>{signingOut ? "Signing out..." : "Sign out"}</span>
-            </button>
           </div>
         </>
       )}
