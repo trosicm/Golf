@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../lib/supabaseClient";
+import {
+  getSideBetPresetsByCategory,
+  SIDE_BET_CATEGORY_LABELS,
+  SIDE_BET_CATEGORY_ORDER,
+  SIDE_BET_PRESETS,
+  type SideBetCategory,
+} from "../../../../lib/golfrivals/sideBets";
 
 const n = (value: any, fallback = 0) => {
   const parsed = Number(value);
@@ -30,6 +37,7 @@ export default function BetsPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeCategory, setActiveCategory] = useState<Exclude<SideBetCategory, "quick"> | "quick">("quick");
   const [invite, setInvite] = useState<any>(null);
   const [gameTeams, setGameTeams] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
@@ -131,7 +139,8 @@ export default function BetsPage() {
   }, [gameTeams, teams, players, gameInvites, wallets, betTransactions]);
 
   const openBets = bets.filter((bet) => betStatus(bet) === "open");
-  const settledBets = bets.filter((bet) => betStatus(bet) !== "open");
+  const presetRows = getSideBetPresetsByCategory(activeCategory);
+  const totalPresetCount = SIDE_BET_PRESETS.length;
 
   if (loading) return <div className="p-4 text-[var(--gr-sand)]">Loading bets...</div>;
   if (error) return <div className="p-4 text-danger whitespace-pre-wrap">{error}</div>;
@@ -142,7 +151,7 @@ export default function BetsPage() {
         <div>
           <div className="mb-1 flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[var(--gr-turf)]"><span className="live-dot" /> Side Bets</div>
           <h1 className="text-3xl font-black text-[var(--gr-sand)]">BETS</h1>
-          <div className="text-sm text-[var(--gr-text-muted)]">Independent side bets · separate from hole pots</div>
+          <div className="text-sm text-[var(--gr-text-muted)]">Independent side bets · separate from hole pots · {totalPresetCount} official presets</div>
         </div>
         <div className="flex gap-2">
           <button className="btn btn-secondary" onClick={loadData}>Refresh</button>
@@ -178,15 +187,61 @@ export default function BetsPage() {
       </section>
 
       <section className="card mb-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Create bet</div>
+            <div className="text-sm text-[var(--gr-text-muted)]">Choose a preset. Creation and settlement come next.</div>
+          </div>
+          <div className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-xs font-black text-[var(--gr-sand)]">{SIDE_BET_CATEGORY_LABELS[activeCategory]}</div>
+        </div>
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+          {SIDE_BET_CATEGORY_ORDER.map((category) => (
+            <button
+              key={category}
+              type="button"
+              onClick={() => setActiveCategory(category)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-xs font-black uppercase ${
+                activeCategory === category
+                  ? "border-[var(--gr-gold)] bg-[var(--gr-gold)] text-[var(--gr-carbon)]"
+                  : "border-[var(--gr-border)] text-[var(--gr-text-muted)]"
+              }`}
+            >
+              {SIDE_BET_CATEGORY_LABELS[category]}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {presetRows.map((preset) => (
+            <button
+              key={preset.type}
+              type="button"
+              className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.32)] p-4 text-left transition hover:border-[var(--gr-gold)] hover:bg-[rgba(20,68,55,0.55)]"
+              onClick={() => alert(`Next step: create ${preset.title}`)}
+            >
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <div className="text-lg font-black text-[var(--gr-sand)]">{preset.title}</div>
+                {preset.isQuick && <span className="rounded-full bg-[var(--gr-gold)] px-2 py-1 text-[10px] font-black uppercase text-[var(--gr-carbon)]">Quick</span>}
+              </div>
+              <div className="text-sm text-[var(--gr-text-muted)]">{preset.description}</div>
+              <div className="mt-3 flex gap-2 text-[10px] font-black uppercase tracking-wide">
+                <span className="rounded-full border border-[var(--gr-border)] px-2 py-1 text-[var(--gr-gold)]">{preset.category}</span>
+                <span className="rounded-full border border-[var(--gr-border)] px-2 py-1 text-[var(--gr-text-muted)]">{preset.scope}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="card mb-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Open bets</div>
-            <div className="text-sm text-[var(--gr-text-muted)]">This page is ready for bet types and rules.</div>
+            <div className="text-sm text-[var(--gr-text-muted)]">Active bets will be stored in Supabase.</div>
           </div>
         </div>
         {openBets.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--gr-border)] p-5 text-center text-[var(--gr-text-muted)]">
-            No active bets yet. Next step: define the bet catalogue and settlement rules.
+            No active bets yet. Next step: create the Supabase tables and creation modal.
           </div>
         ) : (
           <div className="space-y-2">
@@ -198,17 +253,6 @@ export default function BetsPage() {
             ))}
           </div>
         )}
-      </section>
-
-      <section className="card">
-        <div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Configuration plan</div>
-        <div className="mt-2 space-y-2 text-sm text-[var(--gr-text-muted)]">
-          <p>1. Create stable Supabase tables for side bets.</p>
-          <p>2. Add admin bet creation with participants, stake, type and rules.</p>
-          <p>3. Add settlement flow: select winner, loser or push.</p>
-          <p>4. Write bet transactions so balances are always remembered.</p>
-          <p>5. Feed bets net into Match and Leaderboard balance without changing hole pots.</p>
-        </div>
       </section>
     </div>
   );
