@@ -105,6 +105,7 @@ export default function GameLive() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   const [sideBets, setSideBets] = useState<any[]>([]);
+  const [teamPermissions, setTeamPermissions] = useState<any[]>([]);
   const [grossScores, setGrossScores] = useState<Record<string, string>>({});
   const [calculation, setCalculation] = useState<CalcResult | null>(null);
   const [pickerTeam, setPickerTeam] = useState<any>(null);
@@ -182,6 +183,11 @@ export default function GameLive() {
     setPurchases(purchasesRes.data || []);
     setWallets(walletsRes.data || []);
     setSideBets(sideBetsRes.error ? [] : sideBetsRes.data || []);
+    const permissionsRes = await supabase
+      .from("game_team_permissions")
+      .select("*")
+      .eq("game_id", gameId);
+    setTeamPermissions(permissionsRes.error ? [] : permissionsRes.data || []);
     setLastSync(new Date());
     setLoading(false);
     setRefreshing(false);
@@ -241,6 +247,13 @@ export default function GameLive() {
   }, [invite, currentPlayerId, teams, gameInvites, gameTeams]);
   const markedTeamIds = useMemo(() => teamMarkers.filter((row) => markerTeamIdOf(row) === currentTeamId).map(markedTeamIdOf).filter(Boolean), [teamMarkers, currentTeamId]);
 
+  const ownTeamPermission = useMemo(
+    () => teamPermissions.find((row) => (row?.team_id ?? row?.teamId) === currentTeamId) || null,
+    [teamPermissions, currentTeamId]
+  );
+  const canEditOwnScore = isAdmin || Boolean(ownTeamPermission?.can_edit_own_score);
+  const canEditMarkedScore = isAdmin || Boolean(ownTeamPermission?.can_edit_marked_score);
+
   const teamRows = useMemo(() => gameTeams.map((gameTeam, index) => {
     const teamId = teamIdOf(gameTeam);
     const team = teams.find((item) => item.id === teamId);
@@ -258,7 +271,12 @@ export default function GameLive() {
     const baseFunds = wallets.filter((wallet) => teamIdOf(wallet) === teamId || playerIds.includes(playerIdOf(wallet))).reduce((sum, wallet) => sum + walletValue(wallet), 0);
     const markerRow = teamMarkers.find((row) => markedTeamIdOf(row) === teamId);
     const markerTeam = teams.find((item) => item.id === markerTeamIdOf(markerRow));
-    const canEditScore = isAdmin || markedTeamIds.includes(teamId);
+    const isOwnTeamForEdit = currentTeamId === teamId;
+    const isMarkedTeam = markedTeamIds.includes(teamId);
+    const canEditScore =
+      isAdmin ||
+      (isOwnTeamForEdit && canEditOwnScore) ||
+      (isMarkedTeam && canEditMarkedScore);
     // Calcular mulligans/reverses disponibles
     const mulligansAvailable = Number(gameTeam.mulligans_available) || 0;
     const reversesAvailable = Number(gameTeam.reverses_available) || 0;
@@ -267,14 +285,25 @@ export default function GameLive() {
     const mulligansRemaining = Math.max(0, mulligansAvailable - mulligansUsed);
     const reversesRemaining = Math.max(0, reversesAvailable - reversesUsed);
     return { id: teamId, name: team?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", score: currentResult?.gross_score ?? currentResult?.gross ?? currentResult?.score ?? "-", baseFunds, won, spent, balance: baseFunds + won - spent, canEditScore, markerName: markerTeam?.name || "Marker pending", mulligansRemaining, reversesRemaining, mulligansUsed, reversesUsed };
-  }), [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets, liveData, teamMarkers, isAdmin, markedTeamIds]);
+  }), [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets, liveData, teamMarkers, isAdmin, currentTeamId, markedTeamIds, canEditOwnScore, canEditMarkedScore]);
 
   const scoringRows = useMemo(() => teamRows.map((team) => {
     const existingGross = team.score !== "-" ? String(team.score) : "";
     const grossInput = grossScores[team.id] ?? existingGross;
     const grossNumber = grossInput === "" ? NaN : Number(grossInput);
-    return { ...team, grossInput, calculatedNet: Number.isFinite(grossNumber) ? grossNumber : null };
-  }), [teamRows, grossScores]);
+    const isOwnTeam = currentTeamId === team.id;
+    const canUseMulligan = isAdmin || isOwnTeam;
+    const canUseReverse = isAdmin || isOwnTeam;
+    // Purchase actions are allowed for admin or the user's own team.
+    return {
+      ...team,
+      grossInput,
+      calculatedNet: Number.isFinite(grossNumber) ? grossNumber : null,
+      isOwnTeam,
+      canUseMulligan,
+      canUseReverse,
+    };
+  }), [teamRows, grossScores, currentTeamId, isAdmin]);
 
   useEffect(() => { setGrossScores({}); setCalculation(null); setMessage(""); }, [liveData.currentHoleNumber]);
 
@@ -429,11 +458,12 @@ export default function GameLive() {
             <div className="rounded-xl border border-[var(--gr-border)] p-3 flex flex-col gap-2">
               <div className="text-[var(--gr-text-muted)]">Mulligans</div>
               <div className="text-xl font-black">{team.mulligansRemaining} / {team.mulligansUsed}</div>
-              {team.canEditScore || isAdmin ? (
+              {team.canUseMulligan ? (
                 <button
                   className="btn btn-gold mt-2"
                   disabled={saving || team.mulligansRemaining <= 0}
                   onClick={async () => {
+                    if (!team.canUseMulligan) return;
                     setSaving(true);
                     setError("");
                     setMessage("");
@@ -464,7 +494,7 @@ export default function GameLive() {
             <div className="rounded-xl border border-[var(--gr-border)] p-3 flex flex-col gap-2">
               <div className="text-[var(--gr-text-muted)]">Reverse</div>
               <div className="text-xl font-black">{team.reversesRemaining} / {team.reversesUsed}</div>
-              {team.canEditScore || isAdmin ? (
+              {team.canUseReverse ? (
                 <button
                   className="btn btn-gold mt-2"
                   disabled={
@@ -475,6 +505,7 @@ export default function GameLive() {
                     )
                   }
                   onClick={async () => {
+                    if (!team.canUseReverse) return;
                     setSaving(true);
                     setError("");
                     setMessage("");
@@ -511,7 +542,7 @@ export default function GameLive() {
         </div>
       ))}</section>
 
-      <section className="card"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Admin Actions</div><div className="font-black">Close this hole</div></div><div className="text-right text-xs text-[var(--gr-text-muted)]">Pot: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span></div></div>{message && <div className={`mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm font-bold ${message.startsWith("Could not") || message.includes("Resolve") || message.includes("Only") ? "text-danger" : "text-success"}`}>{message}</div>}{calculation && <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">{calculation.type === "error" && <div className="font-bold text-danger">{calculation.message}</div>}{calculation.type === "winner" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div><div className="text-xl font-black text-success">{calculation.winner.name}</div></div>}{calculation.type === "tie" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div><div className="text-xl font-black text-[var(--gr-warning)]">{calculation.tiedTeams.map((team) => team.name).join(" vs ")}</div><div className="text-[var(--gr-text-muted)]">Full pot moves to next hole.</div></div>}</div>}<div className="grid grid-cols-2 gap-2"><button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving || !isAdmin}>Calculate Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !isAdmin || hasOpenHoleBets || !calculation || calculation.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !isAdmin || hasOpenHoleBets || !calculation || calculation.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button></div>{hasOpenHoleBets && <Link href={`/game/${gameId}/bets`} className="btn btn-gold mt-3 w-full">Resolve pending BETS</Link>}{!isAdmin && <div className="mt-3 text-xs text-[var(--gr-text-muted)]">Only admin can close holes.</div>}</section>
+      <section className="card"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Hole Control</div><div className="font-black">Close this hole</div></div><div className="text-right text-xs text-[var(--gr-text-muted)]">Pot: <span className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</span></div></div>{message && <div className={`mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm font-bold ${message.startsWith("Could not") || message.includes("Resolve") || message.includes("Only") ? "text-danger" : "text-success"}`}>{message}</div>}{calculation && <div className="mb-3 rounded-2xl border border-[var(--gr-border)] p-3 text-sm">{calculation.type === "error" && <div className="font-bold text-danger">{calculation.message}</div>}{calculation.type === "winner" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Provisional winner</div><div className="text-xl font-black text-success">{calculation.winner.name}</div></div>}{calculation.type === "tie" && <div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-text-muted)]">Tie / Carry</div><div className="text-xl font-black text-[var(--gr-warning)]">{calculation.tiedTeams.map((team) => team.name).join(" vs ")}</div><div className="text-[var(--gr-text-muted)]">Full pot moves to next hole.</div></div>}</div>}<div className="grid grid-cols-2 gap-2"><button className="btn btn-gold col-span-2" type="button" onClick={calculateWinner} disabled={saving || !isAdmin}>Calculate Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !isAdmin || hasOpenHoleBets || !calculation || calculation.type !== "winner"} onClick={() => confirmHole("winner")}>Confirm Winner</button><button className="btn btn-secondary" type="button" disabled={saving || !isAdmin || hasOpenHoleBets || !calculation || calculation.type !== "tie"} onClick={() => confirmHole("carry")}>Push / Carry</button></div>{hasOpenHoleBets && <Link href={`/game/${gameId}/bets`} className="btn btn-gold mt-3 w-full">Resolve pending BETS</Link>}{!isAdmin && <div className="mt-3 text-xs text-[var(--gr-text-muted)]">Only admin can close holes.</div>}</section>
 
       {pickerTeam && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center"><div className="w-full max-w-md rounded-3xl border border-[var(--gr-border)] bg-[var(--gr-carbon)] p-4 shadow-2xl"><div className="mb-4 flex items-start justify-between gap-3"><div><div className="text-xs uppercase tracking-[0.16em] text-[var(--gr-gold)]">Select result</div><div className="text-xl font-black text-[var(--gr-sand)]">{pickerTeam.name}</div><div className="text-sm text-[var(--gr-text-muted)]">Hole {liveData.currentHoleNumber} · Par {selectedPar}</div></div><button className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-sm font-bold" type="button" onClick={() => setPickerTeam(null)}>Close</button></div><div className="grid grid-cols-2 gap-2">{quickScoreOptions(selectedPar).map((option) => <button key={option.label} type="button" className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.7)] p-3 text-left" onClick={() => { saveDraftScore(pickerTeam, option.value); setPickerTeam(null); }}><div className="text-base font-black text-[var(--gr-sand)]">{option.label}</div><div className="text-xs text-[var(--gr-text-muted)]">{option.subtitle}</div><div className="mt-1 text-lg font-black text-[var(--gr-gold)]">{option.value}</div></button>)}</div><div className="mt-3 rounded-2xl border border-[var(--gr-border)] p-3"><div className="mb-2 text-sm font-black">Otro resultado</div><div className="flex gap-2"><input type="number" inputMode="numeric" min="1" className="w-full rounded-xl border border-[var(--gr-border)] bg-transparent px-3 py-3 text-lg font-black outline-none" value={customScore} onChange={(event) => setCustomScore(event.target.value)} placeholder="Write score" /><button type="button" className="btn btn-gold whitespace-nowrap" onClick={() => { const value = Number(customScore); if (!Number.isFinite(value) || value <= 0) return; saveDraftScore(pickerTeam, value); setPickerTeam(null); }}>Set</button></div></div></div></div>}
     </div>
