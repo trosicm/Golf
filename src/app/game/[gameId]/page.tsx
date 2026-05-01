@@ -28,6 +28,11 @@ const carryValue = (row: any) => n(row?.carry_in ?? row?.carryIn);
 const teamIdOf = (row: any) => row?.team_id ?? row?.teamId ?? row?.id;
 const playerIdOf = (row: any) => row?.player_id ?? row?.playerId;
 const purchaseAmount = (row: any) => n(row?.amount ?? row?.cost ?? row?.value ?? row?.price);
+const economicPurchaseAmount = (row: any) => {
+  const type = purchaseType(row);
+  if (type.includes("mulligan") && !type.includes("reverse")) return 0;
+  return purchaseAmount(row);
+};
 const purchaseHoleNumber = (row: any) => row?.hole_number ?? row?.holeNumber ?? row?.number;
 const purchaseType = (row: any) => String(row?.type ?? row?.purchase_type ?? row?.kind ?? "").toLowerCase();
 const walletValue = (row: any) => n(row?.current_balance ?? row?.balance ?? row?.starting_balance ?? row?.total ?? row?.amount);
@@ -189,13 +194,31 @@ export default function GameLive() {
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(currentHoleStorageKey(gameId)) : null;
     const currentHoleNumber = safeHole(game?.current_hole ?? stored ?? 1);
     const currentHole = holes.find((hole) => holeNo(hole) === currentHoleNumber) || holes[0] || DEFAULT_HOLES[0];
-    const currentPurchases = purchases.filter((purchase) => purchaseHoleNumber(purchase) === currentHoleNumber || purchase?.hole_id === currentHole.id);
-    const purchaseTotal = currentPurchases.reduce((sum, purchase) => sum + purchaseAmount(purchase), 0);
+    const purchaseBelongsToCurrentHole = (purchase: any) => {
+      const directHoleNumber = purchaseHoleNumber(purchase);
+      const numericHoleNumber = Number(directHoleNumber);
+
+      if (Number.isFinite(numericHoleNumber) && numericHoleNumber > 0) {
+        return numericHoleNumber === currentHoleNumber;
+      }
+
+      const purchaseHoleId = purchase?.hole_id ?? purchase?.holeId;
+      const currentHoleId = currentHole?.id;
+
+      if (!purchaseHoleId || !currentHoleId || String(currentHoleId).startsWith("fallback-")) {
+        return false;
+      }
+
+      return purchaseHoleId === currentHoleId;
+    };
+
+    const currentPurchases = purchases.filter(purchaseBelongsToCurrentHole);
+    const purchaseTotal = currentPurchases.reduce((sum, purchase) => sum + economicPurchaseAmount(purchase), 0);
     const carryIn = carryValue(currentHole);
     const baseValue = holeValue(currentHole);
     const currentPot = baseValue + carryIn + purchaseTotal;
-    // Calculate reverseCost: baseValue + carryIn + sum of non-reverse purchases
-    const reverseCost = baseValue + carryIn + currentPurchases.filter((p) => !purchaseType(p).includes("reverse")).reduce((sum, p) => sum + purchaseAmount(p), 0);
+    // Calculate reverseCost: baseValue + carryIn (pot at start of hole)
+    const reverseCost = baseValue + carryIn;
     return { currentHole, currentHoleNumber, currentPurchases, purchaseTotal, carryIn, baseValue, currentPot, reverseCost };
   }, [game, holes, purchases, gameId]);
 
@@ -231,7 +254,7 @@ export default function GameLive() {
     const confirmedWins = teamResults.filter((result) => isWinner(result, teamId) && resultType(result) !== "draft");
     const won = confirmedWins.reduce((sum, result) => sum + n(result?.pot_value ?? result?.pot ?? result?.value ?? result?.amount), 0);
     const teamPurchases = purchases.filter((purchase) => teamIdOf(purchase) === teamId || playerIds.includes(playerIdOf(purchase)));
-    const spent = teamPurchases.reduce((sum, purchase) => sum + purchaseAmount(purchase), 0);
+    const spent = teamPurchases.reduce((sum, purchase) => sum + economicPurchaseAmount(purchase), 0);
     const baseFunds = wallets.filter((wallet) => teamIdOf(wallet) === teamId || playerIds.includes(playerIdOf(wallet))).reduce((sum, wallet) => sum + walletValue(wallet), 0);
     const markerRow = teamMarkers.find((row) => markedTeamIdOf(row) === teamId);
     const markerTeam = teams.find((item) => item.id === markerTeamIdOf(markerRow));
@@ -263,9 +286,23 @@ export default function GameLive() {
     try {
       const holeId = liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id;
       await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_number", liveData.currentHoleNumber).eq("team_id", team.id);
-      if (holeId) await supabase.from("hole_results").delete().eq("game_id", gameId).eq("hole_id", holeId).eq("team_id", team.id);
-      const row = { game_id: gameId, hole_id: holeId, hole_number: liveData.currentHoleNumber, team_id: team.id, gross_score: grossScore, gross: grossScore, score: grossScore, strokes_received: 0, net_score: grossScore, net: grossScore, is_winner: false, is_tied: false, result_type: "draft", pot_value: 0 };
-      await insertWithFallback("hole_results", [row], [({ gross, net, result_type, pot_value, ...rest }) => rest, ({ hole_id, gross, net, result_type, pot_value, ...rest }) => rest, ({ hole_id, hole_number, gross_score, gross, net_score, net, strokes_received, result_type, pot_value, is_winner, is_tied, ...rest }) => rest]);
+      const row = {
+        game_id: gameId,
+        hole_id: holeId,
+        hole_number: liveData.currentHoleNumber,
+        team_id: team.id,
+        score: grossScore,
+        gross_score: grossScore,
+        net_score: grossScore,
+        strokes_received: 0,
+        is_winner: false,
+        is_tied: false,
+        result_type: "draft",
+        pot_value: 0,
+        result: "draft",
+      };
+      const { error: insertError } = await supabase.from("hole_results").insert([row]);
+      if (insertError) throw insertError;
       setGrossScores((current) => ({ ...current, [team.id]: String(grossScore) }));
       setHoleResults((current) => [...current.filter((result) => !(teamIdOf(result) === team.id && (resultHoleNumber(result) === liveData.currentHoleNumber || (result.hole_id ?? result.holeId) === holeId))), row]);
       setCalculation(null); setMessage(`Saved score for ${team.name}: ${grossScore}. Hole has not been closed.`);
@@ -304,9 +341,34 @@ export default function GameLive() {
       const winnerTeamId = calculation.type === "winner" ? calculation.winner.teamId : null;
       const nextHole = Math.min(18, liveData.currentHoleNumber + 1);
       const isFinalHole = liveData.currentHoleNumber >= 18;
-      await clearExistingHoleResults();
-      const rows = calculation.results.map((result) => ({ game_id: gameId, hole_id: liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id, hole_number: liveData.currentHoleNumber, team_id: result.teamId, gross_score: result.grossScore, gross: result.grossScore, score: result.grossScore, strokes_received: 0, net_score: result.netScore, net: result.netScore, is_winner: winnerTeamId === result.teamId, is_tied: calculation.type === "tie", result_type: calculation.type === "winner" ? "winner" : "carry", pot_value: liveData.currentPot }));
-      await insertWithFallback("hole_results", rows, [({ hole_number, gross_score, net_score, result_type, is_tied, pot_value, ...row }) => row, ({ hole_number, gross_score, gross, net_score, result_type, is_tied, pot_value, ...row }) => row, ({ hole_number, hole_id, gross_score, gross, net_score, net, result_type, is_tied, pot_value, strokes_received, ...row }) => row]);
+      const holeId = liveData.currentHole.id?.startsWith?.("fallback-") ? null : liveData.currentHole.id;
+      const { error: deleteError } = await supabase
+        .from("hole_results")
+        .delete()
+        .eq("game_id", gameId)
+        .eq("hole_number", liveData.currentHoleNumber);
+      if (deleteError) throw deleteError;
+
+      const rows = calculation.results.map((result) => {
+        const isWinnerRow = calculation.type === "winner" && winnerTeamId === result.teamId;
+        return {
+          game_id: gameId,
+          hole_id: holeId,
+          hole_number: liveData.currentHoleNumber,
+          team_id: result.teamId,
+          score: result.grossScore,
+          gross_score: result.grossScore,
+          net_score: result.netScore,
+          strokes_received: 0,
+          is_winner: winnerTeamId === result.teamId,
+          is_tied: calculation.type === "tie",
+          result_type: calculation.type === "winner" ? "winner" : "carry",
+          pot_value: isWinnerRow ? liveData.currentPot : 0,
+          result: calculation.type === "winner" ? (isWinnerRow ? "winner" : "lost") : "carry",
+        };
+      });
+      const { error: insertError } = await supabase.from("hole_results").insert(rows);
+      if (insertError) throw insertError;
       if (!isFinalHole) await supabase.from("holes").update({ carry_in: mode === "carry" ? liveData.currentPot : 0 }).eq("game_id", gameId).eq("hole_number", nextHole);
       const { error: updateError } = await supabase.from("games").update({ current_hole: nextHole, status: isFinalHole ? "completed" : game?.status ?? "draft" }).eq("id", gameId);
       if (updateError) throw updateError;
@@ -339,7 +401,7 @@ export default function GameLive() {
 
       {hasOpenHoleBets && <section className="card mb-4 border-[var(--gr-gold)] bg-[rgba(212,174,96,0.10)]"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-xs font-black uppercase tracking-[0.16em] text-[var(--gr-gold)]">Pending side bets</div><div className="text-xl font-black text-[var(--gr-sand)]">{openHoleBets.length} open bet{openHoleBets.length === 1 ? "" : "s"} for hole {liveData.currentHoleNumber}</div><div className="mt-1 text-sm text-[var(--gr-text-muted)]">Resolve or cancel them before closing this hole.</div></div><Link href={`/game/${gameId}/bets`} className="btn btn-gold">Go to BETS</Link></div><div className="mt-3 flex flex-wrap gap-2">{openHoleBets.map((bet) => <span key={bet.id} className="rounded-full border border-[var(--gr-border)] px-3 py-2 text-xs font-black text-[var(--gr-sand)]">{bet.title || bet.type}</span>)}</div></section>}
 
-      <section className="card mb-4 p-0 overflow-hidden"><div className="grid grid-cols-3 border-b border-[var(--gr-border)]"><div className="p-4"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Hole</div><div className="text-3xl font-black">{liveData.currentHoleNumber}<span className="text-base text-[var(--gr-text-muted)]"> / 18</span></div></div><div className="p-4 text-center border-x border-[var(--gr-border)]"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Current Pot</div><div className="text-3xl font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</div></div><div className="p-4 text-right"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Par / SI</div><div className="text-3xl font-black">{liveData.currentHole.par ?? "-"} / {liveData.currentHole.stroke_index ?? liveData.currentHole.si ?? "-"}</div></div></div><div className="grid grid-cols-4 gap-2 p-4 text-center text-xs sm:text-sm"><div><div className="text-[var(--gr-text-muted)]">Hole Value</div><div className="font-black text-[var(--gr-gold)]">€{liveData.baseValue.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Carry</div><div className="font-black text-[var(--gr-warning)]">€{liveData.carryIn.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Added</div><div className="font-black text-[var(--gr-turf)]">€{liveData.purchaseTotal.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Reverse</div><div className="font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</div></div></div></section>
+      <section className="card mb-4 p-0 overflow-hidden"><div className="grid grid-cols-3 border-b border-[var(--gr-border)]"><div className="p-4"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Hole</div><div className="text-3xl font-black">{liveData.currentHoleNumber}<span className="text-base text-[var(--gr-text-muted)]"> / 18</span></div></div><div className="p-4 text-center border-x border-[var(--gr-border)]"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Current Pot</div><div className="text-3xl font-black text-[var(--gr-gold)]">€{liveData.currentPot.toFixed(0)}</div></div><div className="p-4 text-right"><div className="text-xs font-bold uppercase text-[var(--gr-text-muted)]">Par / SI</div><div className="text-3xl font-black">{liveData.currentHole.par ?? "-"} / {liveData.currentHole.stroke_index ?? liveData.currentHole.si ?? "-"}</div></div></div><div className="grid grid-cols-4 gap-2 p-4 text-center text-xs sm:text-sm"><div><div className="text-[var(--gr-text-muted)]">Hole Value</div><div className="font-black text-[var(--gr-gold)]">€{liveData.baseValue.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Carry</div><div className="font-black text-[var(--gr-warning)]">€{liveData.carryIn.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Added</div><div className="font-black text-[var(--gr-turf)]">€{liveData.purchaseTotal.toFixed(0)}</div></div><div><div className="text-[var(--gr-text-muted)]">Reverse</div><div className="font-black text-[var(--gr-gold)]">€{liveData.reverseCost.toFixed(0)}</div></div></div></section>
 
       <section className="grid grid-cols-1 gap-3 mb-4">{scoringRows.map((team, index) => (
         <div key={team.id} className={`card mb-0 ${team.canEditScore ? "" : "opacity-75"}`}>
@@ -375,8 +437,8 @@ export default function GameLive() {
                     setSaving(true);
                     setError("");
                     setMessage("");
-                    try {
-                      const amount = n(game?.mulligan_price, 50);
+                      try {
+                        const amount = 0;
                       const row = {
                         game_id: gameId,
                         hole_id: liveData.currentHole.id || null,

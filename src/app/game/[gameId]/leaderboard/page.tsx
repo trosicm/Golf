@@ -14,9 +14,23 @@ const teamIdOf = (row: any) => row?.team_id ?? row?.teamId ?? row?.id;
 const playerIdOf = (row: any) => row?.player_id ?? row?.playerId;
 const resultHoleNo = (row: any) => row?.hole_number ?? row?.holeNumber ?? row?.number ?? row?.hole_id ?? row?.holeId;
 const purchaseAmount = (row: any) => n(row?.amount ?? row?.cost ?? row?.value ?? row?.price);
+const purchaseType = (row: any) => String(row?.type ?? row?.purchase_type ?? row?.kind ?? "").toLowerCase();
+const economicPurchaseAmount = (row: any) => {
+  const type = purchaseType(row);
+  if (type.includes("mulligan") && !type.includes("reverse")) return 0;
+  return purchaseAmount(row);
+};
 const potValue = (row: any) => n(row?.pot_value ?? row?.pot ?? row?.value ?? row?.amount);
 const walletValue = (row: any) => n(row?.current_balance ?? row?.balance ?? row?.starting_balance ?? row?.total ?? row?.amount);
-const isWinningResult = (row: any, teamId: string) => row?.is_winner === true || row?.winner === true || row?.winner_team_id === teamId;
+const resultType = (row: any) => String(row?.result_type ?? row?.type ?? "draft").toLowerCase();
+const isWinningResult = (row: any, teamId: string) => {
+  const rowTeamId = teamIdOf(row);
+  return rowTeamId === teamId && (
+    row?.is_winner === true ||
+    row?.winner === true ||
+    row?.winner_team_id === teamId
+  );
+};
 
 function getTeamPlayerIds(team: any) {
   return [team?.player_1_id, team?.player_2_id, team?.player1_id, team?.player2_id, team?.player_a_id, team?.player_b_id].filter(Boolean);
@@ -120,6 +134,12 @@ export default function LeaderboardPage() {
   }, [gameId, router]);
 
   const rows = useMemo(() => {
+    const confirmedResults = holeResults.filter((result) => resultType(result) !== "draft");
+    const confirmedHoleNumbers = confirmedResults
+      .map((result) => n(result?.hole_number ?? result?.holeNumber ?? result?.number, 0))
+      .filter((holeNumber) => Number.isFinite(holeNumber) && holeNumber > 0);
+    const matchThru = confirmedHoleNumbers.length ? Math.max(...confirmedHoleNumbers) : null;
+
     const calculated = gameTeams.map((gameTeam, index) => {
       const teamId = teamIdOf(gameTeam);
       const team = teams.find((item) => item.id === teamId);
@@ -129,10 +149,9 @@ export default function LeaderboardPage() {
       const playerIds = Array.from(new Set((fromTeam.length ? fromTeam : fromInvites.length ? fromInvites : fallbackIds).filter(Boolean)));
       const playerNames = playerIds.map((id) => playerName(players.find((player) => player.id === id))).filter(Boolean).join(" & ");
       const results = holeResults.filter((result) => teamIdOf(result) === teamId);
-      const holesPlayed = new Set(results.map(resultHoleNo).filter(Boolean)).size;
-      const winnerResults = results.filter((result) => isWinningResult(result, teamId));
+      const winnerResults = results.filter((result) => isWinningResult(result, teamId) && resultType(result) !== "draft");
       const won = winnerResults.reduce((sum, result) => sum + potValue(result), 0);
-      const spent = purchases.filter((purchase) => teamIdOf(purchase) === teamId || playerIds.includes(playerIdOf(purchase))).reduce((sum, purchase) => sum + purchaseAmount(purchase), 0);
+      const spent = purchases.filter((purchase) => teamIdOf(purchase) === teamId || playerIds.includes(playerIdOf(purchase))).reduce((sum, purchase) => sum + economicPurchaseAmount(purchase), 0);
       const baseFunds = wallets.filter((wallet) => teamIdOf(wallet) === teamId || playerIds.includes(playerIdOf(wallet))).reduce((sum, wallet) => sum + walletValue(wallet), 0);
       const balance = baseFunds + won - spent;
       return {
@@ -142,11 +161,11 @@ export default function LeaderboardPage() {
         players: playerNames || "Players pending",
         baseFunds,
         holesWon: winnerResults.length,
-        thru: holesPlayed || "-",
+        thru: matchThru || "-",
         won,
         spent,
         balance,
-        movement: balance > baseFunds ? "+1" : balance < baseFunds ? "-1" : "-",
+        movement: "-",
       };
     });
 

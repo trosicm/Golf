@@ -15,13 +15,31 @@ const grossOf = (row: any) => row?.gross_score ?? row?.gross ?? row?.score ?? ""
 const netOf = (row: any) => row?.net_score ?? row?.net ?? "";
 const potOf = (row: any) => n(row?.pot_value ?? row?.pot ?? row?.value ?? row?.amount);
 const resultTypeOf = (row: any) => String(row?.result_type ?? row?.type ?? "draft").toLowerCase();
-const isWinner = (row: any, teamId: string) => row?.is_winner === true || row?.winner === true || row?.winner_team_id === teamId;
+const isWinner = (row: any, teamId: string) => {
+  const rowTeamId = teamIdOf(row);
+  return rowTeamId === teamId && (
+    row?.is_winner === true ||
+    row?.winner === true ||
+    row?.winner_team_id === teamId
+  );
+};
 
-function resultBadge(type: string) {
-  if (type === "winner") return "text-success";
-  if (type === "carry") return "text-[var(--gr-gold)]";
+const resultLabelForTeam = (row: any, teamId: string) => {
+  const type = resultTypeOf(row);
+  if (isWinner(row, teamId)) return "WINNER";
+  if (type === "winner") return "LOST";
+  if (type === "carry" || row?.is_tied === true) return "CARRY";
+  if (type === "draft") return "DRAFT";
+  return "-";
+};
+
+const resultClassForLabel = (label: string) => {
+  if (label === "WINNER") return "text-success";
+  if (label === "LOST") return "text-danger";
+  if (label === "CARRY") return "text-[var(--gr-gold)]";
+  if (label === "DRAFT") return "text-[var(--gr-text-muted)]";
   return "text-[var(--gr-text-muted)]";
-}
+};
 
 export default function ScorecardPage() {
   const params = useParams();
@@ -158,7 +176,7 @@ export default function ScorecardPage() {
             <tbody>
               {holeRows.map((hole) => {
                 const holeResults = hole.results || [];
-                const winner = teamRows.find((team) => holeResults.some((result: any) => isWinner(result, team.id)));
+                  const winner = teamRows.find((team) => holeResults.find((result: any) => isWinner(result, team.id)));
                 const carry = holeResults.some((result: any) => result?.is_tied === true || resultTypeOf(result) === "carry");
                 const pot = holeResults.reduce((max: number, result: any) => Math.max(max, potOf(result)), 0);
                 return (
@@ -171,14 +189,14 @@ export default function ScorecardPage() {
                     <td className="px-3 py-4 text-center font-black text-[var(--gr-gold)]">€{n(hole.base_value ?? hole.value ?? hole.price).toFixed(0)}</td>
                     {teamRows.map((team) => {
                       const result = holeResults.find((item: any) => teamIdOf(item) === team.id);
-                      const type = result ? resultTypeOf(result) : "";
+                        const label = result ? resultLabelForTeam(result, team.id) : "-";
                       return (
                         <td key={team.id} className="px-3 py-4 text-center">
                           {result ? (
                             <div className="rounded-2xl border border-[var(--gr-border)] bg-[rgba(20,68,55,0.34)] px-2 py-2">
                               <div className="text-lg font-black text-[var(--gr-sand)]">{grossOf(result)}</div>
                               <div className="text-xs text-[var(--gr-text-muted)]">Net {netOf(result) || "-"}</div>
-                              <div className={`text-[10px] font-black uppercase ${resultBadge(type)}`}>{type}</div>
+                                <div className={`text-[10px] font-black uppercase ${resultClassForLabel(label)}`}>{label}</div>
                             </div>
                           ) : <span className="text-[var(--gr-text-muted)]">-</span>}
                         </td>
