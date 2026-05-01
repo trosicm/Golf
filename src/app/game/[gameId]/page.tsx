@@ -254,7 +254,19 @@ export default function GameLive() {
   const canEditOwnScore = isAdmin || Boolean(ownTeamPermission?.can_edit_own_score);
   const canEditMarkedScore = isAdmin || Boolean(ownTeamPermission?.can_edit_marked_score);
 
-  const teamRows = useMemo(() => gameTeams.map((gameTeam, index) => {
+  const teamRows = useMemo(() => {
+    const teamCount = gameTeams.length;
+    const closedHoleNumbers = [...new Set(
+      holeResults
+        .filter((r) => resultType(r) !== "draft")
+        .map((r) => n(r?.hole_number ?? r?.holeNumber))
+        .filter((num) => num > 0)
+    )];
+    const contributions = closedHoleNumbers.reduce((sum, holeNum) => {
+      const hole = holes.find((h) => holeNo(h) === holeNum);
+      return sum + (teamCount > 0 ? holeValue(hole) / teamCount : 0);
+    }, 0);
+    return gameTeams.map((gameTeam, index) => {
     const teamId = teamIdOf(gameTeam);
     const team = teams.find((item) => item.id === teamId);
     const fromTeam = teamPlayerIds(team);
@@ -284,8 +296,9 @@ export default function GameLive() {
     const reversesUsed = teamPurchases.filter((purchase) => purchaseType(purchase).includes("reverse")).length;
     const mulligansRemaining = Math.max(0, mulligansAvailable - mulligansUsed);
     const reversesRemaining = Math.max(0, reversesAvailable - reversesUsed);
-    return { id: teamId, name: team?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", score: currentResult?.gross_score ?? currentResult?.gross ?? currentResult?.score ?? "-", baseFunds, won, spent, balance: baseFunds + won - spent, canEditScore, markerName: markerTeam?.name || "Marker pending", mulligansRemaining, reversesRemaining, mulligansUsed, reversesUsed };
-  }), [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets, liveData, teamMarkers, isAdmin, currentTeamId, markedTeamIds, canEditOwnScore, canEditMarkedScore]);
+    return { id: teamId, name: team?.name || `Team ${index + 1}`, players: playerNames.length ? playerNames.join(" & ") : "Players pending", score: currentResult?.gross_score ?? currentResult?.gross ?? currentResult?.score ?? "-", baseFunds, won, spent, balance: baseFunds + won - spent - contributions, canEditScore, markerName: markerTeam?.name || "Marker pending", mulligansRemaining, reversesRemaining, mulligansUsed, reversesUsed };
+    });
+  }, [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets, liveData, teamMarkers, isAdmin, currentTeamId, markedTeamIds, canEditOwnScore, canEditMarkedScore, holes]);
 
   const scoringRows = useMemo(() => teamRows.map((team) => {
     const existingGross = team.score !== "-" ? String(team.score) : "";

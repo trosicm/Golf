@@ -59,6 +59,7 @@ export default function LeaderboardPage() {
   const [holeResults, setHoleResults] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
+  const [holes, setHoles] = useState<any[]>([]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -93,7 +94,7 @@ export default function LeaderboardPage() {
       return;
     }
 
-    const [gameTeamsRes, teamsRes, playersRes, invitesRes, resultsRes, purchasesRes, walletsRes] = await Promise.all([
+    const [gameTeamsRes, teamsRes, playersRes, invitesRes, resultsRes, purchasesRes, walletsRes, holesRes] = await Promise.all([
       supabase.from("game_teams").select("*").eq("game_id", gameId),
       supabase.from("teams").select("*"),
       supabase.from("players").select("*"),
@@ -101,6 +102,7 @@ export default function LeaderboardPage() {
       supabase.from("hole_results").select("*").eq("game_id", gameId),
       supabase.from("purchases").select("*").eq("game_id", gameId),
       supabase.from("game_player_wallets").select("*").eq("game_id", gameId),
+      supabase.from("holes").select("*").eq("game_id", gameId),
     ]);
 
     const failed = [
@@ -111,6 +113,7 @@ export default function LeaderboardPage() {
       ["hole_results", resultsRes],
       ["purchases", purchasesRes],
       ["game_player_wallets", walletsRes],
+      ["holes", holesRes],
     ].find(([, res]: any) => res.error);
 
     if (failed) {
@@ -126,6 +129,7 @@ export default function LeaderboardPage() {
     setHoleResults(resultsRes.data || []);
     setPurchases(purchasesRes.data || []);
     setWallets(walletsRes.data || []);
+    setHoles(holesRes.data || []);
     setLoading(false);
   };
 
@@ -139,6 +143,12 @@ export default function LeaderboardPage() {
       .map((result) => n(result?.hole_number ?? result?.holeNumber ?? result?.number, 0))
       .filter((holeNumber) => Number.isFinite(holeNumber) && holeNumber > 0);
     const matchThru = confirmedHoleNumbers.length ? Math.max(...confirmedHoleNumbers) : null;
+    const closedHoleNumbers = [...new Set(confirmedHoleNumbers)];
+    const teamCount = gameTeams.length;
+    const contributions = closedHoleNumbers.reduce((sum, holeNum) => {
+      const hole = holes.find((h) => n(h?.hole_number ?? h?.holeNumber) === holeNum);
+      return sum + (teamCount > 0 ? n(hole?.base_value ?? hole?.baseValue ?? hole?.value) / teamCount : 0);
+    }, 0);
 
     const calculated = gameTeams.map((gameTeam, index) => {
       const teamId = teamIdOf(gameTeam);
@@ -153,7 +163,7 @@ export default function LeaderboardPage() {
       const won = winnerResults.reduce((sum, result) => sum + potValue(result), 0);
       const spent = purchases.filter((purchase) => teamIdOf(purchase) === teamId || playerIds.includes(playerIdOf(purchase))).reduce((sum, purchase) => sum + economicPurchaseAmount(purchase), 0);
       const baseFunds = wallets.filter((wallet) => teamIdOf(wallet) === teamId || playerIds.includes(playerIdOf(wallet))).reduce((sum, wallet) => sum + walletValue(wallet), 0);
-      const balance = baseFunds + won - spent;
+      const balance = baseFunds + won - spent - contributions;
       return {
         id: teamId,
         position: 0,
@@ -170,7 +180,7 @@ export default function LeaderboardPage() {
     });
 
     return calculated.sort((a, b) => b.balance - a.balance || b.holesWon - a.holesWon).map((row, index) => ({ ...row, position: index + 1 }));
-  }, [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets]);
+  }, [gameTeams, teams, players, gameInvites, holeResults, purchases, wallets, holes]);
 
   const totalBank = rows.reduce((sum, row) => sum + n(row.baseFunds), 0);
   const totalWon = rows.reduce((sum, row) => sum + n(row.won), 0);
