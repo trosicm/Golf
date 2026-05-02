@@ -44,7 +44,7 @@ export default function CurrentHoleSync() {
     const syncCurrentHole = async () => {
       const { data: results, error } = await supabase
         .from("hole_results")
-        .select("hole_number,holeNumber,number,result_type,type")
+        .select("*")
         .eq("game_id", gameId);
 
       if (cancelled || error) return;
