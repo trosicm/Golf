@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import GameBottomNav from "../../../components/golfrivals/GameBottomNav";
 import GameTopMenu from "../../../components/golfrivals/GameTopMenu";
+import CurrentHoleSync from "./CurrentHoleSync";
 
 export default function GameRouteLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -12,6 +13,7 @@ export default function GameRouteLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen pb-24 pt-10">
+      <CurrentHoleSync />
       <GameTopMenu gameId={gameId} />
       {children}
       <GameBottomNav gameId={gameId} />
